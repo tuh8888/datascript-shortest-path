@@ -28,71 +28,73 @@
 
 (defn get-neighbors
   [g node]
-  (->> (d/q '{:find  [[(pull ?neighbor [::dsg/id]) ...]]
-              :in    [$ ?node]
+  (->> g
+       :db
+       (d/q '{:find  [[(pull ?neighbor [::dsg/id]) ...]]
+              :in    [?node $]
               :where [[?node :to ?edge] [?edge :target ?neighbor]]}
-            (:db g)
             [::dsg/id node])
        (map ::dsg/id)))
 
 (defn get-weight
   [g a b]
-  (d/q '{:find  [?dist .]
-         :in    [$ ?a ?b]
-         :where [[?a :to ?edge] [?edge :target ?b] [?edge :weight ?dist]]}
-       (:db g)
-       [::dsg/id a]
-       [::dsg/id b]))
+  (->> g
+       :db
+       (d/q '{:find  [?dist .]
+              :in    [?a ?b $]
+              :where [[?a :to ?edge] [?edge :target ?b] [?edge :weight ?dist]]}
+            [::dsg/id a]
+            [::dsg/id b])))
 
 (defn dijkstra-shortest-path-traversal
   [neighbor-fn weight-fn]
-  (letfn
-    [(update-path [{::keys [dist]
-                    :as    path} g neighbor current current-path]
-       (let [dist (::dist path)
-             alt  (->> neighbor
-                       (weight-fn g current)
-                       (+ (::dist current-path)))]
-         (if (and dist (< dist alt))
-           path
-           {::dist  alt
-            ::nodes (::nodes current-path)})))
-     (update-paths [paths g current current-path]
-       (->>
-        current
-        (neighbor-fn g)
-        (reduce
-         (fn [paths neighbor]
-           (update paths neighbor update-path g neighbor current current-path))
-         paths)))]
-    (fn [g context acc [current & queue]]
-      (let [current-path (-> context
-                             (get-in [::paths current])
-                             (update ::nodes (fnil conj []) current))
-            context
-            (update context ::paths update-paths g current current-path)]
-        [context (assoc acc current current-path)
-         (sort-by (some-fn #(get-in context [::paths % ::dist])
+  (fn [g
+       {::keys [paths]
+        :as    context}
+       acc
+       [curr & queue]]
+    (letfn
+      [(update-path [curr-path paths neighbor weight]
+         (update paths neighbor
+           (fn [path]
+             (let [alt-dist (+ weight (::dist curr-path))]
+               (if (and path (< (::dist path) alt-dist))
+                 path
+                 (assoc curr-path ::dist alt-dist))))))
+       (update-paths [paths]
+         (let [paths (update-in paths [curr ::nodes] (fnil conj []) curr)]
+           (->> curr
+                (neighbor-fn g)
+                (map (juxt identity (partial weight-fn g curr)))
+                (into {})
+                (reduce-kv (partial update-path (get paths curr)) paths))))]
+      (let [paths (update-paths paths)]
+        [(assoc context ::paths paths)
+         (assoc acc curr (get paths curr))
+         (sort-by (some-fn #(get-in paths [% ::dist])
                            (constantly Integer/MAX_VALUE))
                   queue)]))))
 
 (defn nodes
   [g]
-  (-> g
-      (igraph/query '[:find ?node-id
-                      :where (or [?node :to] [_ :target ?node])
-                      [?node ::dsg/id ?node-id]])
-      (->> (map :?node-id))))
+  (->> g
+       :db
+       (d/q '{:find  [[(pull ?node [::dsg/id]) ...]]
+              :where [(or [?node :to] [_ :target ?node])]})
+       (map ::dsg/id)))
 
 (defn shortest-path
-  [g node &
+  [g
+   node
+   &
    {:keys [neighbor-fn weight-fn]
     :or   {neighbor-fn get-neighbors
            weight-fn   get-weight}}]
-  (->> g
-       nodes
-       (cons node)
-       (igraph/traverse g
-                        (dijkstra-shortest-path-traversal neighbor-fn weight-fn)
-                        {::paths {node {::dist 0}}}
-                        {})))
+  (let [acc       {}
+        queue     (-> g
+                      nodes
+                      (conj node)
+                      vec)
+        context   {::paths {node {::dist 0}}}
+        traversal (dijkstra-shortest-path-traversal neighbor-fn weight-fn)]
+    (igraph/traverse g traversal context acc queue)))

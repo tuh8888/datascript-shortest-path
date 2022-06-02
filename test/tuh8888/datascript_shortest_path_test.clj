@@ -1,6 +1,6 @@
 (ns tuh8888.datascript-shortest-path-test
   (:require
-   [clojure.test :refer [deftest testing is]]
+   [clojure.test :refer [deftest is]]
    [ont-app.datascript-graph.core :as dsg]
    [ont-app.igraph.core :as igraph]
    [tuh8888.datascript-shortest-path :as sut]))
@@ -14,7 +14,8 @@
                                                   :c {:weight 1}
                                                   :d {:weight 1}}]
                                                 [:b
-                                                 :to {:e {:weight 2}}]])))]
+                                                 :to
+                                                 {:e {:weight 2}}]])))]
     (is (= {:a {::sut/dist  0
                 ::sut/nodes [:a]}
             :b {::sut/dist  1
@@ -59,7 +60,8 @@
                                                   :d {:weight 2}
                                                   :g {:weight 2}
                                                   :i {:weight 1}}]
-                                                [:g :to
+                                                [:g
+                                                 :to
                                                  {:d {:weight 1}
                                                   :f {:weight 2}
                                                   :h {:weight 3}
