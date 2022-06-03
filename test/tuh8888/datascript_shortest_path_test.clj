@@ -5,6 +5,16 @@
    [ont-app.igraph.core :as igraph]
    [tuh8888.datascript-shortest-path :as sut]))
 
+(defn path-info
+  [g path]
+  (-> {}
+      (assoc :dist  (sut/calc-edge-dist g path)
+             :nodes (->> path
+                         (sut/edges->node-path g)
+                         (map :target)
+                         (cons :a)
+                         vec))))
+
 (deftest shortest-path-test
   (let [g (-> {:weight {:db/type :db.type/integer}}
               (dsg/make-graph)
@@ -18,18 +28,19 @@
                                                 [:b
                                                  :to
                                                  {:e {:weight 2}}]])))]
-    (is (= {:a {::sut/dist  0
-                ::sut/nodes [:a]}
-            :b {::sut/dist  1
-                ::sut/nodes [:a :b]}
-            :c {::sut/dist  1
-                ::sut/nodes [:a :c]}
-            :d {::sut/dist  1
-                ::sut/nodes [:a :d]}
-            :e {::sut/dist  3
-                ::sut/nodes [:a :b :e]}}
+    (is (= {:a {:dist  0
+                :nodes [:a]}
+            :b {:dist  1
+                :nodes [:a :b]}
+            :c {:dist  1
+                :nodes [:a :c]}
+            :d {:dist  1
+                :nodes [:a :d]}
+            :e {:dist  3
+                :nodes [:a :b :e]}}
            (-> g
-               (sut/shortest-path :a)))))
+               (sut/shortest-path :a)
+               (update-vals (partial path-info g))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
   (let [g (-> {:weight {:db/type :db.type/integer}}
               (dsg/make-graph)
@@ -80,8 +91,9 @@
                                                  {:f {:weight 1}
                                                   :g {:weight 3}
                                                   :b {:weight 5}}]])))]
-    (is (= {::sut/dist  7
-            ::sut/nodes [:a :c :d :g :b]}
+    (is (= {:dist  7
+            :nodes [:a :c :d :g :b]}
            (-> g
                (sut/shortest-path :a)
-               :b)))))
+               :b
+               (->> (path-info g)))))))
