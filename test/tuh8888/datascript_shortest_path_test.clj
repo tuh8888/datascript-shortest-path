@@ -10,6 +10,8 @@
               (dsg/make-graph)
               (igraph/add (sut/complex-triples [[:a
                                                  :to
+                                                 {:b {:weight 2}}
+                                                 :to
                                                  {:b {:weight 1}
                                                   :c {:weight 1}
                                                   :d {:weight 1}}]

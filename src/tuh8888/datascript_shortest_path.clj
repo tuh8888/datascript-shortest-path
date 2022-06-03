@@ -9,7 +9,7 @@
   [subject predicate object]
   (->> [subject object]
        (map name)
-       (apply format "%s-%s")
+       (apply format "%s-%s-%s" (random-uuid))
        (keyword (name predicate))))
 
 (defn complex-triples
@@ -36,15 +36,30 @@
             [::dsg/id node])
        (map ::dsg/id)))
 
+(defn edge-minimum-weight
+  [db a b]
+  (d/q '{:find  [(min ?dist) .]
+         :in    [?ma ?mb $]
+         :where [[?ma :to ?medge] [?medge :target ?mb] [?medge :weight ?dist]]}
+       a
+       b
+       db))
+
 (defn get-weight
   [g a b]
   (->> g
        :db
-       (d/q '{:find  [?dist .]
-              :in    [?a ?b $]
-              :where [[?a :to ?edge] [?edge :target ?b] [?edge :weight ?dist]]}
+       (d/q '{:find [(pull ?edge [:weight]) .]
+              :in [?a ?b $]
+              :where
+              [[?a :to ?edge]
+               [?edge :target ?b]
+               [(tuh8888.datascript-shortest-path/edge-minimum-weight $ ?a ?b)
+                ?mdist]
+               [?edge :weight ?mdist]]}
             [::dsg/id a]
-            [::dsg/id b])))
+            [::dsg/id b])
+       :weight))
 
 (defn dijkstra-shortest-path-traversal
   [neighbor-fn weight-fn]
