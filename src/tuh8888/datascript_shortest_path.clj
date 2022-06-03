@@ -26,16 +26,6 @@
        (apply concat)
        vec))
 
-(defn get-neighbors
-  [g node]
-  (->> g
-       :db
-       (d/q '{:find  [[(pull ?neighbor [::dsg/id]) ...]]
-              :in    [?node $]
-              :where [[?node :to ?edge] [?edge :target ?neighbor]]}
-            [::dsg/id node])
-       (map ::dsg/id)))
-
 (defn edge-minimum-weight
   [db a b]
   (d/q '{:find  [(min ?dist) .]
@@ -45,20 +35,18 @@
        b
        db))
 
-(defn get-lowest-weight-edge
-  [g a b]
-  (->> g
-       :db
-       (d/q '{:find [?edge .]
-              :in [?a ?b $]
-              :where
-              [[?a :to ?edge]
-               [?edge :target ?b]
-               [(tuh8888.datascript-shortest-path/edge-minimum-weight $ ?a ?b)
-                ?mdist]
-               [?edge :weight ?mdist]]}
-            [::dsg/id a]
-            [::dsg/id b])))
+(defn get-min-successors
+  [g node]
+  (d/q '{:find  [?b-id ?edge]
+         :in    [$ ?a]
+         :where [[?a :to ?edge]
+                 [?edge :target ?b]
+                 [(tuh8888.datascript-shortest-path/edge-minimum-weight $ ?a ?b)
+                  ?mdist]
+                 [?edge :weight ?mdist]
+                 [?b ::dsg/id ?b-id]]}
+       (:db g)
+       [::dsg/id node]))
 
 (defn calc-edge-dist
   [g edges]
@@ -72,60 +60,48 @@
 (defn edges->node-path
   [g edges]
   (->> edges
-       (map (partial d/pull (:db g) [{:target [::dsg/id]} :weight]))
+       (d/pull-many (:db g) [{:target [::dsg/id]} :weight])
        (map #(update % :target (comp ::dsg/id first)))))
 
 (defn dijkstra-shortest-path-traversal
-  [neighbor-fn edge-fn dist-fn]
-  (fn [g
-       {::keys [paths]
-        :as    context}
-       acc
-       [curr & queue]]
-    (let [curr-path (get paths curr [])]
-      (letfn [(update-path [paths neighbor]
-                (update paths neighbor
-                  (fn [path]
-                    (let [alt-path (->> neighbor
-                                        (edge-fn g curr)
-                                        (conj curr-path))]
-                      (if (->> [path alt-path]
-                               (map (partial dist-fn g))
-                               (apply <))
-                        path
-                        alt-path)))))
-              (update-paths [paths]
-                (->> curr
-                     (neighbor-fn g)
-                     (reduce update-path paths)))]
-        (let [context (update context ::paths update-paths)]
-          [context
-           (assoc acc curr curr-path)
-           (sort-by (comp (partial dist-fn g) (::paths context)) queue)])))))
+  [link-fn dist-fn]
+  (fn [g context acc [curr & queue]]
+    (let [curr-path (get-in context [::paths curr] [])
+          context   (->>
+                     curr
+                     (link-fn g)
+                     (reduce (fn [context [neighbor edge]]
+                               (let [orig (get-in context [::paths neighbor])
+                                     alt  (conj curr-path edge)]
+                                 (cond-> context
+                                   (->> [alt orig]
+                                        (map (partial dist-fn g))
+                                        (apply <))
+                                   (assoc-in [::paths neighbor] alt))))
+                             context))]
+      [context
+       (assoc acc curr curr-path)
+       (sort-by (comp (partial dist-fn g) (::paths context)) queue)])))
 
 (defn nodes
   [g]
-  (->> g
-       :db
-       (d/q '{:find  [[(pull ?node [::dsg/id]) ...]]
-              :where [(or [?node :to] [_ :target ?node])]})
-       (map ::dsg/id)))
+  (d/q '{:find  [[?id ...]]
+         :where [(or [?node :to] [_ :target ?node])
+                 [?node ::dsg/id ?id]
+                 [?node ::dsg/id ?id]]}
+       (:db g)))
 
 (defn shortest-path
   [g
    node
    &
-   {:keys [neighbor-fn edge-fn dist-fn]
-    :or   {neighbor-fn get-neighbors
-           edge-fn     get-lowest-weight-edge
-           dist-fn     calc-edge-dist}}]
+   {:keys [link-fn dist-fn]
+    :or   {link-fn get-min-successors
+           dist-fn calc-edge-dist}}]
   (let [acc       {}
-        queue     (-> g
-                      nodes
-                      (conj node)
-                      vec)
+        queue     (->> g
+                       nodes
+                       (into [node]))
         context   {::paths {node []}}
-        traversal (dijkstra-shortest-path-traversal neighbor-fn
-                                                    edge-fn
-                                                    dist-fn)]
+        traversal (dijkstra-shortest-path-traversal link-fn dist-fn)]
     (igraph/traverse g traversal context acc queue)))
