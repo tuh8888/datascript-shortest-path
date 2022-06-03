@@ -1,19 +1,57 @@
 (ns tuh8888.datascript-shortest-path-test
   (:require
-   [clojure.test :refer [deftest is]]
+   [clojure.test        :refer [deftest is]]
+   [datascript.core     :as d]
    [ont-app.datascript-graph.core :as dsg]
    [ont-app.igraph.core :as igraph]
    [tuh8888.datascript-shortest-path :as sut]))
 
+(defn calc-edge-dist
+  [g edges]
+  (if (nil? edges)
+    Integer/MAX_VALUE
+    (->> edges
+         (d/pull-many (:db g) [:weight])
+         (map :weight)
+         (reduce + 0))))
+
+(defn edges->node-path
+  [g edges]
+  (->> edges
+       (d/pull-many (:db g) [{::sut/to [::dsg/id]} :weight])
+       (map #(update % ::sut/to (comp ::dsg/id first)))))
+
 (defn path-info
   [g path]
   (-> {}
-      (assoc :dist  (sut/calc-edge-dist g path)
+      (assoc :dist  (calc-edge-dist g path)
              :nodes (->> path
-                         (sut/edges->node-path g)
+                         (edges->node-path g)
                          (map ::sut/to)
                          (cons :a)
                          vec))))
+
+(defn get-min-successors
+  [g node]
+  (let [min-weight (fn [db a b]
+                     (d/q '{:find  [(min ?dist) .]
+                            :in    [?ma ?mb $ %]
+                            :where [(edge ?ma _ ?mb ?medge)
+                                    [?medge :weight ?dist]]}
+                          a
+                          b
+                          db
+                          sut/graph-rules))]
+    (d/q '{:find  [?b-id ?edge]
+           :in    [$ ?a min-weight %]
+           :where [(edge ?a _ ?b ?edge)
+                   [(min-weight $ ?a ?b) ?mdist]
+                   [?edge :weight ?mdist]
+                   [?b ::dsg/id ?b-id]]}
+         (:db g)
+         [::dsg/id node]
+         min-weight
+         sut/graph-rules)))
 
 (deftest shortest-path-test
   (let [g (-> {:weight {:db/type :db.type/integer}}
@@ -39,7 +77,7 @@
             :e {:dist  3
                 :nodes [:a :b :e]}}
            (-> g
-               (sut/shortest-path :a)
+               (sut/shortest-path :a get-min-successors calc-edge-dist)
                (update-vals (partial path-info g))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
   (let [g (-> {:weight {:db/type :db.type/integer}}
@@ -94,6 +132,6 @@
     (is (= {:dist  7
             :nodes [:a :c :d :g :b]}
            (-> g
-               (sut/shortest-path :a)
+               (sut/shortest-path :a get-min-successors calc-edge-dist)
                :b
                (->> (path-info g)))))))
