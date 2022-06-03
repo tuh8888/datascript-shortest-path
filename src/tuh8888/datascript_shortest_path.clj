@@ -22,31 +22,38 @@
                                                             object)]]
          (->> (for [[k v] attrs]
                 [attr-id k v])
-              (into [[subject predicate attr-id] [attr-id :target object]])))
+              (into [[attr-id ::from subject]
+                     [attr-id ::to object]
+                     [attr-id ::label predicate]])))
        (apply concat)
        vec))
+
+(def rules
+  '[[(edge ?s ?p ?o ?e) [?e ::from ?s] [?e ::to ?o] [?e ::label ?p]]
+    [(node? ?x) (or [_ ::from ?x] [_ ::to ?x])]])
 
 (defn edge-minimum-weight
   [db a b]
   (d/q '{:find  [(min ?dist) .]
-         :in    [?ma ?mb $]
-         :where [[?ma :to ?medge] [?medge :target ?mb] [?medge :weight ?dist]]}
+         :in    [?ma ?mb $ %]
+         :where [(edge ?ma _ ?mb ?medge) [?medge :weight ?dist]]}
        a
        b
-       db))
+       db
+       rules))
 
 (defn get-min-successors
   [g node]
   (d/q '{:find  [?b-id ?edge]
-         :in    [$ ?a]
-         :where [[?a :to ?edge]
-                 [?edge :target ?b]
+         :in    [$ ?a %]
+         :where [(edge ?a _ ?b ?edge)
                  [(tuh8888.datascript-shortest-path/edge-minimum-weight $ ?a ?b)
                   ?mdist]
                  [?edge :weight ?mdist]
                  [?b ::dsg/id ?b-id]]}
        (:db g)
-       [::dsg/id node]))
+       [::dsg/id node]
+       rules))
 
 (defn calc-edge-dist
   [g edges]
@@ -60,8 +67,8 @@
 (defn edges->node-path
   [g edges]
   (->> edges
-       (d/pull-many (:db g) [{:target [::dsg/id]} :weight])
-       (map #(update % :target (comp ::dsg/id first)))))
+       (d/pull-many (:db g) [{::to [::dsg/id]} :weight])
+       (map #(update % ::to (comp ::dsg/id first)))))
 
 (defn dijkstra-shortest-path-traversal
   [link-fn dist-fn]
@@ -86,10 +93,10 @@
 (defn nodes
   [g]
   (d/q '{:find  [[?id ...]]
-         :where [(or [?node :to] [_ :target ?node])
-                 [?node ::dsg/id ?id]
-                 [?node ::dsg/id ?id]]}
-       (:db g)))
+         :in    [$ %]
+         :where [(node? ?node) [?node ::dsg/id ?id]]}
+       (:db g)
+       rules))
 
 (defn shortest-path
   [g

@@ -11,7 +11,7 @@
       (assoc :dist  (sut/calc-edge-dist g path)
              :nodes (->> path
                          (sut/edges->node-path g)
-                         (map :target)
+                         (map ::sut/to)
                          (cons :a)
                          vec))))
 
