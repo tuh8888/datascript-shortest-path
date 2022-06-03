@@ -1,4 +1,4 @@
-(ns tuh8888.datascript-shortest-path
+(ns ont-app.datascript-graph.path
   (:require
    [datascript.core     :as d]
    [ont-app.datascript-graph.core :as dsg]

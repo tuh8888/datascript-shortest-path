@@ -1,10 +1,10 @@
-(ns tuh8888.datascript-shortest-path-test
+(ns ont-app.datascript-graph.path-test
   (:require
    [clojure.test        :refer [deftest is]]
    [datascript.core     :as d]
    [ont-app.datascript-graph.core :as dsg]
    [ont-app.igraph.core :as igraph]
-   [tuh8888.datascript-shortest-path :as sut]))
+   [ont-app.datascript-graph.path :as sut]))
 
 (defn calc-edge-dist
   [g edges]
