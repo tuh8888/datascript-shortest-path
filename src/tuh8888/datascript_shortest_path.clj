@@ -1,11 +1,10 @@
 (ns tuh8888.datascript-shortest-path
-  (:gen-class)
   (:require
    [datascript.core     :as d]
    [ont-app.datascript-graph.core :as dsg]
    [ont-app.igraph.core :as igraph]))
 
-(defn get-attr-id
+(defn ->edge-id
   [subject predicate object]
   (->> [subject object]
        (map name)
@@ -14,31 +13,27 @@
 
 (defn complex-triples
   [triples]
-  (->> (for [[subject & p-os]         triples
-             [predicate object-attrs] (partition 2 p-os)
-             [object attrs]           object-attrs
-             :let                     [attr-id (get-attr-id subject
-                                                            predicate
-                                                            object)]]
-         (->> (for [[k v] attrs]
-                [attr-id k v])
-              (into [[attr-id ::from subject]
-                     [attr-id ::to object]
-                     [attr-id ::label predicate]])))
-       (apply concat)
-       vec))
+  (->> (for [[s & p-os]       triples
+             [p object-attrs] (partition 2 p-os)
+             [o attrs]        object-attrs]
+         (let [e  (->edge-id s p o)
+               ts [[e ::from s] [e ::to o] [e ::label p]]]
+           (->> attrs
+                (map (partial into [e]))
+                (into ts))))
+       (reduce into [])))
 
 (def graph-rules
   '[[(edge ?s ?p ?o ?e) [?e ::from ?s] [?e ::to ?o] [?e ::label ?p]]
     [(node? ?x) (or [_ ::from ?x] [_ ::to ?x])]])
 
 (defn dijkstra-shortest-path-traversal
-  [link-fn dist-fn]
+  [successor-fn dist-fn]
   (fn [g context acc [curr & queue]]
     (let [curr-path (get-in context [::paths curr] [])
           context   (->>
                      curr
-                     (link-fn g)
+                     (successor-fn g)
                      (reduce (fn [context [neighbor edge]]
                                (let [orig (get-in context [::paths neighbor])
                                      alt  (conj curr-path edge)]
@@ -53,19 +48,19 @@
        (sort-by (comp (partial dist-fn g) (::paths context)) queue)])))
 
 (defn nodes
-  [g]
+  [{:keys [db]}]
   (d/q '{:find  [[?id ...]]
          :in    [$ %]
          :where [(node? ?node) [?node ::dsg/id ?id]]}
-       (:db g)
+       db
        graph-rules))
 
 (defn shortest-path
-  [g node link-fn dist-fn]
+  [g node successor-fn dist-fn]
   (let [acc       {}
         queue     (->> g
                        nodes
                        (into [node]))
         context   {::paths {node []}}
-        traversal (dijkstra-shortest-path-traversal link-fn dist-fn)]
+        traversal (dijkstra-shortest-path-traversal successor-fn dist-fn)]
     (igraph/traverse g traversal context acc queue)))

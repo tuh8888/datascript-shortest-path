@@ -31,7 +31,7 @@
                          (cons :a)
                          vec))))
 
-(defn get-min-successors
+(defn min-weight-successors
   [g node]
   (let [min-weight (fn [db a b]
                      (d/q '{:find  [(min ?dist) .]
@@ -77,7 +77,7 @@
             :e {:dist  3
                 :nodes [:a :b :e]}}
            (-> g
-               (sut/shortest-path :a get-min-successors calc-edge-dist)
+               (sut/shortest-path :a min-weight-successors calc-edge-dist)
                (update-vals (partial path-info g))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
   (let [g (-> {:weight {:db/type :db.type/integer}}
@@ -132,6 +132,6 @@
     (is (= {:dist  7
             :nodes [:a :c :d :g :b]}
            (-> g
-               (sut/shortest-path :a get-min-successors calc-edge-dist)
+               (sut/shortest-path :a min-weight-successors calc-edge-dist)
                :b
                (->> (path-info g)))))))
