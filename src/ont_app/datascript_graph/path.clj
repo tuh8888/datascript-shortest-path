@@ -36,12 +36,9 @@
 
 (defn edges
   [g successor-fn]
-  (for [from   (nodes g)
-        [to e] (successor-fn g from)]
-    {:from from
-     :to   to
-     :e    e
-     :id   (::dsg/id (d/pull (:db g) [::dsg/id] e))}))
+  (->> g
+       nodes
+       (mapcat successor-fn)))
 
 (defn ->edge-ref
   [subject predicate object]
@@ -64,70 +61,65 @@
 
 (defn further? [b a dist-fn] (< (dist-fn a) (dist-fn b)))
 
-(defn dijkstra-traversal
-  [successor-fn dist-fn]
-  (fn [g
-       {::keys [paths]
-        :as    context}
-       acc
-       [curr & queue]]
-    (let [curr-path (get paths curr)
-          acc       (cond-> acc
-                      curr-path (assoc curr curr-path))
-          paths     (->>
-                     curr
-                     (successor-fn g)
-                     (reduce
-                      (fn [paths [neighbor edge]]
-                        (let [alt (-> curr-path
-                                      (cond-pred-> ((complement nil?))
-                                                   (conj edge)))]
-                          (cond-pred-> paths
-                                       (-> neighbor
-                                           (further? alt (partial dist-fn g)))
-                                       (assoc neighbor alt))))
-                      paths))
-          queue     (sort-by (comp (partial dist-fn g) paths) queue)
-          context   (assoc context ::paths paths)]
-      [context acc queue])))
+(defn maybe-swap
+  [dist-fn paths {:keys [from to e]} & {:keys [detect-neg?]}]
+  (let [alt-path (-> paths
+                     from
+                     (cond-pred-> ((complement nil?)) (conj e)))]
+    (cond-pred-> paths
+                 (-> to
+                     (further? alt-path dist-fn))
+                 (assoc to
+                        (if detect-neg?
+                          (throw (ex-info "Negative weight cycle" {}))
+                          alt-path)))))
 
 (defn dijkstra-shortest-path
-  [g source successor-fn dist-fn]
-  (let [acc       {}
-        queue     (->> g
-                       nodes
-                       (into [source]))
-        context   {::paths {source []}}
-        traversal (dijkstra-traversal successor-fn dist-fn)]
-    (igraph/traverse g traversal context acc queue)))
+  [g paths successor-fn dist-fn]
+  (letfn [(traversal [g context paths [from & queue]]
+            (let [paths (->> from
+                             successor-fn
+                             (reduce (partial maybe-swap dist-fn) paths))]
+              (->> queue
+                   (sort-by (comp dist-fn paths))
+                   (vector context paths))))]
+    (->> g
+         nodes
+         (into [(first (keys paths))])
+         (igraph/traverse g traversal paths))))
 
 (defn bellman-ford-shortest-path
-  [g source successor-fn dist-fn & {:keys [detect-neg-cycles?]}]
-  (let [E         (edges g successor-fn)
-        num-nodes (-> g
-                      nodes
-                      count)]
-    (-> num-nodes
-        (cond-> (not detect-neg-cycles?) dec)
-        range
-        (->>
-         (reduce
-          (fn [paths i]
-            (reduce (fn [paths {:keys [from to e]}]
-                      (let [alt (-> paths
-                                    (get from)
-                                    (cond-pred-> ((complement nil?)) (conj e)))]
-                        (cond-pred->
-                         paths
-                         (-> to
-                             (further? alt (partial dist-fn g)))
-                         (assoc to
-                                (if (= (dec num-nodes) i)
-                                  (throw (ex-info "Negative weight cycle" {}))
-                                  alt)))))
-                    paths
-                    E))
-          {source []})))))
+  [g acc successor-fn dist-fn & {:keys [skip-neg-detect?]}]
+  (let [E (edges g successor-fn)
+        n (-> g
+              nodes
+              count)]
+    (->
+      n
+      (cond-> skip-neg-detect? dec)
+      range
+      (->>
+       (map (partial = (dec n)))
+       (reduce
+        (fn [paths detect-neg?]
+          (reduce #(maybe-swap dist-fn %1 %2 :detect-neg? detect-neg?) paths E))
+        acc)))))
+
+(defn shortest-path
+  [g
+   source
+   successor-fn
+   dist-fn
+   &
+   {:keys [alg detect-neg?]
+    :or   {alg ::dijkstra}}]
+  (let [dist-fn      (partial dist-fn g)
+        successor-fn (partial successor-fn g)
+        acc          {source []}
+        f            (if (or detect-neg? (= alg ::bellman-ford))
+                       bellman-ford-shortest-path
+                       dijkstra-shortest-path)]
+    (f g acc successor-fn dist-fn)))
 
 (defn johnson-all-pairs-shortest-paths
   "Finds the shortest paths between all pairs of nodes using Johnson's algorithm."
@@ -139,15 +131,15 @@
                                 vector
                                 complex-triples
                                 (igraph/add g))
-                        bf (bellman-ford-shortest-path g
-                                                       ::s
-                                                       successor-fn
-                                                       dist-fn
-                                                       :detect-neg-cycles?
-                                                       true)]
+                        bf (shortest-path g
+                                          ::s
+                                          successor-fn
+                                          dist-fn
+                                          :alg                ::bellman-ford
+                                          :detect-neg-cycles? true)]
                     (letfn [(h [node] (dist-fn g (get bf node)))]
                       (fn [a b weight] (- (+ weight (h a)) (h b)))))
-        g         (->> (edges g successor-fn)
+        g         (->> (edges g (partial successor-fn g))
                        (reduce (fn [coll {:keys [from to id e]}]
                                  (->> [e]
                                       (dist-fn g)
@@ -156,9 +148,8 @@
                                       (conj coll)))
                                [])
                        (igraph/add g))]
-    (reduce (fn [paths source]
-              (assoc paths
-                     source
-                     (dijkstra-shortest-path g source successor-fn dist-fn)))
-            {}
-            V)))
+    (reduce
+     (fn [paths source]
+       (assoc paths source (shortest-path g source successor-fn dist-fn)))
+     {}
+     V)))
