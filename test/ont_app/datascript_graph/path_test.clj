@@ -3,8 +3,8 @@
    [clojure.test        :refer [deftest is testing]]
    [datascript.core     :as d]
    [ont-app.datascript-graph.core :as dsg]
-   [ont-app.igraph.core :as igraph]
-   [ont-app.datascript-graph.path :as sut]))
+   [ont-app.datascript-graph.path :as sut]
+   [ont-app.igraph.core :as igraph]))
 
 (defn calc-edge-dist
   [g edges]
@@ -176,13 +176,17 @@
               :e {:dist  3
                   :nodes [:a :b :e]}}
              (-> g
-                 (sut/bellman-ford-shortest-path source calc-edge-dist)
+                 (sut/bellman-ford-shortest-path source
+                                                 min-weight-successors
+                                                 calc-edge-dist)
                  (update-vals (partial path-info g source))))))
     (let [source :e]
       (is (= {:e {:dist  0
                   :nodes [:e]}}
              (-> g
-                 (sut/bellman-ford-shortest-path source calc-edge-dist)
+                 (sut/bellman-ford-shortest-path source
+                                                 min-weight-successors
+                                                 calc-edge-dist)
                  (update-vals (partial path-info g source)))))))
   (testing "Detect negative cycles"
    (let [g (-> {:weight {:db/type :db.type/integer}}
@@ -203,8 +207,11 @@
                                                   {:a {:weight -2}}]])))]
      (is (= "Negative weight cycle"
             (try (sut/bellman-ford-shortest-path g
-                                                 :a calc-edge-dist
-                                                 :detect-neg-cycles? true)
+                                                 :a
+                                                 min-weight-successors
+                                                 calc-edge-dist
+                                                 :detect-neg-cycles?
+                                                 true)
                  (catch clojure.lang.ExceptionInfo e (ex-message e)))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
   (let [g      (-> {:weight {:db/type :db.type/integer}}
@@ -258,10 +265,13 @@
                                                        :b {:weight 5}}]])))
         source :a
         target :b]
+    (sut/edges g min-weight-successors)
     (is (= {:dist  7
             :nodes [:a :c :d :g :b]}
            (-> g
-               (sut/bellman-ford-shortest-path source calc-edge-dist)
+               (sut/bellman-ford-shortest-path source
+                                               min-weight-successors
+                                               calc-edge-dist)
                target
                (->> (path-info g source)))))))
 

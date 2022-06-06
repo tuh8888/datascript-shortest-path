@@ -35,16 +35,13 @@
        graph-rules))
 
 (defn edges
-  [{:keys [db]}]
-  (d/q '{:find  [?from-id ?to-id ?e ?e-id]
-         :keys  [from to e id]
-         :in    [$ %]
-         :where [(edge ?from _ ?to ?e)
-                 [?from ::dsg/id ?from-id]
-                 [?to ::dsg/id ?to-id]
-                 [?e ::dsg/id ?e-id]]}
-       db
-       graph-rules))
+  [g successor-fn]
+  (for [from   (nodes g)
+        [to e] (successor-fn g from)]
+    {:from from
+     :to   to
+     :e    e
+     :id   (::dsg/id (d/pull (:db g) [::dsg/id] e))}))
 
 (defn ->edge-ref
   [subject predicate object]
@@ -105,8 +102,8 @@
     (igraph/traverse g traversal context acc queue)))
 
 (defn bellman-ford-shortest-path
-  [g source dist-fn & {:keys [detect-neg-cycles?]}]
-  (let [E         (edges g)
+  [g source successor-fn dist-fn & {:keys [detect-neg-cycles?]}]
+  (let [E         (edges g successor-fn)
         num-nodes (-> g
                       nodes
                       count)]
@@ -143,13 +140,14 @@
                                 complex-triples
                                 (igraph/add g))
                         bf (bellman-ford-shortest-path g
-                                                       ::s dist-fn
+                                                       ::s
+                                                       successor-fn
+                                                       dist-fn
                                                        :detect-neg-cycles?
                                                        true)]
                     (letfn [(h [node] (dist-fn g (get bf node)))]
                       (fn [a b weight] (- (+ weight (h a)) (h b)))))
-        g         (->> g
-                       edges
+        g         (->> (edges g successor-fn)
                        (reduce (fn [coll {:keys [from to id e]}]
                                  (->> [e]
                                       (dist-fn g)
