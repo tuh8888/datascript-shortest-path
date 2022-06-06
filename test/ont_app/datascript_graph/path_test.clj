@@ -1,6 +1,6 @@
 (ns ont-app.datascript-graph.path-test
   (:require
-   [clojure.test        :refer [deftest is]]
+   [clojure.test        :refer [deftest is testing]]
    [datascript.core     :as d]
    [ont-app.datascript-graph.core :as dsg]
    [ont-app.igraph.core :as igraph]
@@ -24,12 +24,12 @@
 (defn path-info
   [g path]
   (-> {}
-      (assoc :dist  (calc-edge-dist g path)
-             :nodes (->> path
-                         (edges->node-path g)
-                         (map ::sut/to)
-                         (cons :a)
-                         vec))))
+      (cond-> (not (string? path)) (assoc :dist  (calc-edge-dist g path)
+                                          :nodes (->> path
+                                                      (edges->node-path g)
+                                                      (map ::sut/to)
+                                                      (cons :a)
+                                                      vec)))))
 
 (defn min-weight-successors
   [g node]
@@ -164,6 +164,28 @@
            (-> g
                (sut/bellman-ford-shortest-path :a calc-edge-dist)
                (update-vals (partial path-info g))))))
+  (testing "Detect negative cycles"
+   (let [g (-> {:weight {:db/type :db.type/integer}}
+               (dsg/make-graph)
+               (igraph/add (sut/complex-triples [[:a
+                                                  :to
+                                                  {:b {:weight 2}}
+                                                  :to
+                                                  {:b {:weight 1}
+                                                   :c {:weight 1}
+                                                   :d {:weight 1}}]
+                                                 [:b
+                                                  :to
+                                                  {:e {:weight 2}
+                                                   :c {:weight -2}}]
+                                                 [:c
+                                                  :to
+                                                  {:a {:weight -2}}]])))]
+     (is (= "Negative weight cycle"
+            (try (sut/bellman-ford-shortest-path g
+                                                 :a calc-edge-dist
+                                                 :detect-neg-cycles? true)
+                 (catch clojure.lang.ExceptionInfo e (ex-message e)))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
   (let [g (-> {:weight {:db/type :db.type/integer}}
               (dsg/make-graph)

@@ -37,7 +37,7 @@
 (defn edges
   [{:keys [db]}]
   (d/q '{:find  [?from-id ?to-id ?e]
-         :keys  [from to e]
+         :keys  [from to edge]
          :in    [$ %]
          :where [(edge ?from _ ?to ?e)
                  [?from ::dsg/id ?from-id]
@@ -101,23 +101,29 @@
     (igraph/traverse g traversal context acc queue)))
 
 (defn bellman-ford-shortest-path
-  [g source dist-fn]
-  (let [E (edges g)]
-    (->> g
-         nodes
-         count
-         dec
-         range
-         (reduce
-          (fn [paths _]
-            (reduce (fn [paths {:keys [from to e]}]
-                      (let [alt (-> paths
-                                    (get from)
-                                    (cond-pred-> ((complement nil?)) (conj e)))]
-                        (cond-pred-> paths
-                                     (-> to
-                                         (further? alt (partial dist-fn g)))
-                                     (assoc to alt))))
-                    paths
-                    E))
-          {source []}))))
+  [g source dist-fn & {:keys [detect-neg-cycles?]}]
+  (let [E         (edges g)
+        num-nodes (-> g
+                      nodes
+                      count)]
+    (-> num-nodes
+        (cond-> (not detect-neg-cycles?) dec)
+        range
+        (->> (reduce
+              (fn [paths i]
+                (reduce
+                 (fn [paths {:keys [from to edge]}]
+                   (let [alt (-> paths
+                                 (get from)
+                                 (cond-pred-> ((complement nil?)) (conj edge)))]
+                     (cond-pred->
+                      paths
+                      (-> to
+                          (further? alt (partial dist-fn g)))
+                      (assoc to
+                             (if (= (dec num-nodes) i)
+                               (throw (ex-info "Negative weight cycle" {}))
+                               alt)))))
+                 paths
+                 E))
+              {source []})))))
