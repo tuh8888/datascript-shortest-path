@@ -27,25 +27,28 @@
   '[[(edge ?s ?p ?o ?e) [?e ::from ?s] [?e ::to ?o] [?e ::label ?p]]
     [(node? ?x) (or [_ ::from ?x] [_ ::to ?x])]])
 
+(defn further? [b a dist-fn] (< (dist-fn a) (dist-fn b)))
+
 (defn dijkstra-shortest-path-traversal
   [successor-fn dist-fn]
   (fn [g context acc [curr & queue]]
     (let [curr-path (get-in context [::paths curr] [])
-          context   (->>
-                     curr
-                     (successor-fn g)
-                     (reduce (fn [context [neighbor edge]]
-                               (let [orig (get-in context [::paths neighbor])
-                                     alt  (conj curr-path edge)]
-                                 (cond-> context
-                                   (->> [alt orig]
-                                        (map (partial dist-fn g))
-                                        (apply <))
-                                   (assoc-in [::paths neighbor] alt))))
-                             context))]
-      [context
-       (assoc acc curr curr-path)
-       (sort-by (comp (partial dist-fn g) (::paths context)) queue)])))
+          context   (->> curr
+                         (successor-fn g)
+                         (reduce (fn [context [neighbor edge]]
+                                   (let [alt (conj curr-path edge)]
+                                     (cond-> context
+                                       (-> context
+                                           (get-in [::paths neighbor])
+                                           (further? alt (partial dist-fn g)))
+                                       (assoc-in [::paths
+                                                  neighbor]
+                                        alt))))
+                                 context))
+          acc       (assoc acc curr curr-path)
+          queue     (sort-by (comp (partial dist-fn g) (::paths context))
+                             queue)]
+      [context acc queue])))
 
 (defn nodes
   [{:keys [db]}]
