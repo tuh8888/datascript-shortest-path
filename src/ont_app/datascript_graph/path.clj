@@ -36,16 +36,17 @@
 
 (defn edges
   [{:keys [db]}]
-  (d/q '{:find  [?from-id ?to-id ?e]
-         :keys  [from to edge]
+  (d/q '{:find  [?from-id ?to-id ?e ?e-id]
+         :keys  [from to e id]
          :in    [$ %]
          :where [(edge ?from _ ?to ?e)
                  [?from ::dsg/id ?from-id]
-                 [?to ::dsg/id ?to-id]]}
+                 [?to ::dsg/id ?to-id]
+                 [?e ::dsg/id ?e-id]]}
        db
        graph-rules))
 
-(defn ->edge-id
+(defn ->edge-ref
   [subject predicate object]
   (->> [subject object]
        (map name)
@@ -57,7 +58,7 @@
   (->> (for [[s & p-os]       triples
              [p object-attrs] (partition 2 p-os)
              [o attrs]        object-attrs]
-         (let [e  (->edge-id s p o)
+         (let [e  (->edge-ref s p o)
                ts [[e ::from s] [e ::to o] [e ::label p]]]
            (->> attrs
                 (map (partial into [e]))
@@ -73,14 +74,17 @@
         :as    context}
        acc
        [curr & queue]]
-    (let [curr-path (get paths curr [])
-          acc       (assoc acc curr curr-path)
+    (let [curr-path (get paths curr)
+          acc       (cond-> acc
+                      curr-path (assoc curr curr-path))
           paths     (->>
                      curr
                      (successor-fn g)
                      (reduce
                       (fn [paths [neighbor edge]]
-                        (let [alt (conj curr-path edge)]
+                        (let [alt (-> curr-path
+                                      (cond-pred-> ((complement nil?))
+                                                   (conj edge)))]
                           (cond-pred-> paths
                                        (-> neighbor
                                            (further? alt (partial dist-fn g)))
@@ -109,21 +113,54 @@
     (-> num-nodes
         (cond-> (not detect-neg-cycles?) dec)
         range
-        (->> (reduce
-              (fn [paths i]
-                (reduce
-                 (fn [paths {:keys [from to edge]}]
-                   (let [alt (-> paths
-                                 (get from)
-                                 (cond-pred-> ((complement nil?)) (conj edge)))]
-                     (cond-pred->
-                      paths
-                      (-> to
-                          (further? alt (partial dist-fn g)))
-                      (assoc to
-                             (if (= (dec num-nodes) i)
-                               (throw (ex-info "Negative weight cycle" {}))
-                               alt)))))
-                 paths
-                 E))
-              {source []})))))
+        (->>
+         (reduce
+          (fn [paths i]
+            (reduce (fn [paths {:keys [from to e]}]
+                      (let [alt (-> paths
+                                    (get from)
+                                    (cond-pred-> ((complement nil?)) (conj e)))]
+                        (cond-pred->
+                         paths
+                         (-> to
+                             (further? alt (partial dist-fn g)))
+                         (assoc to
+                                (if (= (dec num-nodes) i)
+                                  (throw (ex-info "Negative weight cycle" {}))
+                                  alt)))))
+                    paths
+                    E))
+          {source []})))))
+
+(defn johnson-all-pairs-shortest-paths
+  "Finds the shortest paths between all pairs of nodes using Johnson's algorithm."
+  [g successor-fn dist-fn w-label]
+  (let [V         (nodes g)
+        re-weight (let [g  (->> V
+                                (reduce (fn [m to] (assoc m to {w-label 0})) {})
+                                (vector ::s :to)
+                                vector
+                                complex-triples
+                                (igraph/add g))
+                        bf (bellman-ford-shortest-path g
+                                                       ::s dist-fn
+                                                       :detect-neg-cycles?
+                                                       true)]
+                    (letfn [(h [node] (dist-fn g (get bf node)))]
+                      (fn [a b weight] (- (+ weight (h a)) (h b)))))
+        g         (->> g
+                       edges
+                       (reduce (fn [coll {:keys [from to id e]}]
+                                 (->> [e]
+                                      (dist-fn g)
+                                      (re-weight from to)
+                                      (vector id w-label)
+                                      (conj coll)))
+                               [])
+                       (igraph/add g))]
+    (reduce (fn [paths source]
+              (assoc paths
+                     source
+                     (dijkstra-shortest-path g source successor-fn dist-fn)))
+            {}
+            V)))
