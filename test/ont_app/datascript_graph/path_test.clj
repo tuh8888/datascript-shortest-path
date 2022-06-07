@@ -273,7 +273,7 @@
                                   min-weight-successors
                                   calc-edge-dist
                                   :alg
-                                  ::bellman-ford)
+                                  ::sut/bellman-ford)
                target
                (->> (path-info g source)))))))
 
