@@ -1,30 +1,15 @@
 (ns ont-app.datascript-graph.path
   (:require
-   [datascript.core     :as d]
+   [datascript.core           :as d]
    [ont-app.datascript-graph.core :as dsg]
-   [ont-app.igraph.core :as igraph]))
+   [ont-app.igraph.core       :as igraph]
+   [w01fe.fibonacci-heap.core :as fh]
+   [ont-app.datascript-graph.util :refer [cond-pred->]]))
 
 (def graph-rules
   '[[(edge ?s ?p ?o ?e) [?e ::from ?s] [?e ::to ?o] [?e ::label ?p]]
     [(node? ?x) (or [_ ::from ?x] [_ ::to ?x])]
     [(edge? ?x) (or [?x ::from _] [?x ::to _] [?x ::label _])]])
-
-(defmacro cond-pred->
-  "Like cond-> but also threads initial expr through tests."
-  {:added "1.5"}
-  [expr & clauses]
-  (assert (even? (count clauses)))
-  (let [g     (gensym)
-        steps (map (fn [[test step]]
-                     `(if (-> ~g
-                              ~test)
-                        (-> ~g
-                            ~step)
-                        ~g))
-                   (partition 2 clauses))]
-    `(let [~g ~expr
-           ~@(interleave (repeat g) (butlast steps))]
-       ~(if (empty? steps) g (last steps)))))
 
 (defn nodes
   [{:keys [db]}]
