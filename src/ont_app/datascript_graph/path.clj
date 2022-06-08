@@ -55,9 +55,8 @@
      (-> (path-fn to)
          dist-fn
          (> alt-dist))
-     ((fn [state]
-        (when detect-neg? (throw (ex-info "Negative weight cycle" {})))
-        (update-state-fn state to alt-path alt-dist))))))
+     (-> (cond-> detect-neg? (do (throw (ex-info "Negative weight cycle" {}))))
+         (update-state-fn to alt-path alt-dist)))))
 
 (defn dijkstra-shortest-path
   [_ paths successor-fn dist-fn]
