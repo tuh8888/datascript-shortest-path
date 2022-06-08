@@ -1,10 +1,10 @@
 (ns ont-app.datascript-graph.path
   (:require
-   [clojure.data.priority-map :as pm]
    [datascript.core           :as d]
    [ont-app.datascript-graph.core :as dsg]
    [ont-app.datascript-graph.util :refer [cond-pred->]]
-   [ont-app.igraph.core       :as igraph]))
+   [ont-app.igraph.core       :as igraph]
+   [w01fe.fibonacci-heap.core :as fh]))
 
 (def graph-rules
   '[[(edge ?s ?p ?o ?e) [?e ::from ?s] [?e ::to ?o] [?e ::label ?p]]
@@ -45,44 +45,47 @@
        (reduce into [])))
 
 (defn maybe-swap
-  [update-state-fn path-fn dist-fn detect-neg? state {:keys [from to e]}]
-  (let [alt-path (-> state
-                     (path-fn from)
+  [update-state-fn dist-fn detect-neg? paths {:keys [from to e]}]
+  (let [alt-path (-> paths
+                     from
                      (cond-pred-> ((complement nil?)) (conj e)))
         alt-dist (dist-fn alt-path)]
     (cond-pred->
-     state
-     (-> (path-fn to)
+     paths
+     (-> to
          dist-fn
          (> alt-dist))
      (-> (cond-> detect-neg? (do (throw (ex-info "Negative weight cycle" {}))))
          (update-state-fn to alt-path alt-dist)))))
 
 (defn dijkstra-shortest-path
-  [_ paths successor-fn dist-fn]
-  (let [update-state-fn (fn [state to alt-path alt-dist]
-                          (-> state
-                              (assoc-in [:paths to] alt-path)
-                              (assoc-in [:queue to] alt-dist)))
-        path-fn         (fn [state node] (get-in state [:paths node]))]
-    (loop [from  (-> paths
-                     keys
-                     first)
-           state {:paths paths
-                  :queue (pm/priority-map)}]
-      (let [state (->>
-                   from
-                   successor-fn
-                   (reduce
-                    (partial maybe-swap update-state-fn path-fn dist-fn false)
-                    state))]
-        (if (empty? (:queue state))
-          (:paths state)
-          (recur (-> state
-                     :queue
-                     peek
-                     key)
-                 (update state :queue pop)))))))
+  [g paths successor-fn dist-fn]
+  (let [h               (fh/fibonacci-heap)
+        h-nodes         (->> g
+                             nodes
+                             (reduce (fn [m n]
+                                       (->> n
+                                            (fh/add! h Integer/MAX_VALUE)
+                                            (assoc m n)))
+                                     {}))
+        dec-key!        (fn [k v] (fh/decrease-key! h (h-nodes k) (int v) k))
+        update-state-fn (fn [state to alt-path alt-dist]
+                          (dec-key! to alt-dist)
+                          (assoc state to alt-path))
+        source          (-> paths
+                            keys
+                            first)]
+    (dec-key! source 0)
+    (loop [paths paths]
+      (let [from  (second (fh/remove-min! h))
+            state (->> from
+                       successor-fn
+                       (reduce (partial maybe-swap
+                                        update-state-fn
+                                        dist-fn
+                                        false)
+                               paths))]
+        (if (fh/empty? h) state (recur state))))))
 
 (defn bellman-ford-shortest-path
   [g paths successor-fn dist-fn & {:keys [skip-neg-detect?]}]
@@ -99,7 +102,6 @@
                             (reduce (partial maybe-swap
                                              (fn [state to alt-path _]
                                                (assoc state to alt-path))
-                                             (fn [paths node] (node paths))
                                              dist-fn
                                              detect-neg?)
                                     paths)))
