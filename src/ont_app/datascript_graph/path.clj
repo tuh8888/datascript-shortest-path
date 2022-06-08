@@ -1,10 +1,10 @@
 (ns ont-app.datascript-graph.path
   (:require
+   [clojure.data.priority-map :as pm]
    [datascript.core           :as d]
    [ont-app.datascript-graph.core :as dsg]
-   [ont-app.igraph.core       :as igraph]
-   [w01fe.fibonacci-heap.core :as fh]
-   [ont-app.datascript-graph.util :refer [cond-pred->]]))
+   [ont-app.datascript-graph.util :refer [cond-pred->]]
+   [ont-app.igraph.core       :as igraph]))
 
 (def graph-rules
   '[[(edge ?s ?p ?o ?e) [?e ::from ?s] [?e ::to ?o] [?e ::label ?p]]
@@ -44,34 +44,35 @@
                 (into ts))))
        (reduce into [])))
 
-(defn further? [b a dist-fn] (< (dist-fn a) (dist-fn b)))
-
 (defn maybe-swap
-  [dist-fn paths {:keys [from to e]} & {:keys [detect-neg?]}]
-  (let [alt-path (-> paths
-                     from
-                     (cond-pred-> ((complement nil?)) (conj e)))]
-    (cond-pred-> paths
-                 (-> to
-                     (further? alt-path dist-fn))
-                 (assoc to
-                        (if detect-neg?
-                          (throw (ex-info "Negative weight cycle" {}))
-                          alt-path)))))
+  [dist-fn detect-neg? [paths queue] {:keys [from to e]}]
+  (let [alt-path  (-> from
+                      paths
+                      (cond-pred-> ((complement nil?)) (conj e)))
+        orig-dist (-> to
+                      paths
+                      dist-fn)
+        alt-dist  (dist-fn alt-path)]
+    (if (< alt-dist orig-dist)
+      (let [paths (assoc paths to alt-path)
+            queue (assoc queue to alt-dist)]
+        (when detect-neg? (throw (ex-info "Negative weight cycle" {})))
+        [paths queue])
+      [paths queue])))
 
 (defn dijkstra-shortest-path
-  [g paths successor-fn dist-fn]
-  (letfn [(traversal [g context paths [from & queue]]
-            (let [paths (->> from
-                             successor-fn
-                             (reduce (partial maybe-swap dist-fn) paths))]
-              (->> queue
-                   (sort-by (comp dist-fn paths))
-                   (vector context paths))))]
-    (->> g
-         nodes
-         (into [(first (keys paths))])
-         (igraph/traverse g traversal paths))))
+  [_ paths successor-fn dist-fn]
+  (let [[source path] (first paths)]
+    (loop [queue (-> (pm/priority-map)
+                     (assoc source (dist-fn path)))
+           paths paths]
+      (let [from          (key (peek queue))
+            queue         (pop queue)
+            [paths queue] (->> from
+                               successor-fn
+                               (reduce (partial maybe-swap dist-fn false)
+                                       [paths queue]))]
+        (if (empty? queue) paths (recur queue paths))))))
 
 (defn bellman-ford-shortest-path
   [g acc successor-fn dist-fn & {:keys [skip-neg-detect?]}]
@@ -79,16 +80,16 @@
         n (-> g
               nodes
               count)]
-    (->
-      n
-      (cond-> skip-neg-detect? dec)
-      range
-      (->>
-       (map (partial = (dec n)))
-       (reduce
-        (fn [paths detect-neg?]
-          (reduce #(maybe-swap dist-fn %1 %2 :detect-neg? detect-neg?) paths E))
-        acc)))))
+    (-> n
+        (cond-> skip-neg-detect? dec)
+        range
+        (->> (map (partial = (dec n)))
+             (reduce (fn [paths detect-neg?]
+                       (->> E
+                            (reduce (partial maybe-swap dist-fn detect-neg?)
+                                    [paths {}])
+                            first))
+                     acc)))))
 
 (defn shortest-path
   [g
