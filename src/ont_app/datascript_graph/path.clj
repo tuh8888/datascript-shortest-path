@@ -1,10 +1,11 @@
 (ns ont-app.datascript-graph.path
   (:require
-   [datascript.core           :as d]
+   [clojure.data.priority-map :as pm]
+   [datascript.core :as d]
    [ont-app.datascript-graph.core :as dsg]
+   [ont-app.datascript-graph.fibonacci-heap :as fh]
    [ont-app.datascript-graph.util :refer [cond-pred->]]
-   [ont-app.igraph.core       :as igraph]
-   [w01fe.fibonacci-heap.core :as fh]))
+   [ont-app.igraph.core :as igraph]))
 
 (def graph-rules
   '[[(edge ?s ?p ?o ?e) [?e ::from ?s] [?e ::to ?o] [?e ::label ?p]]
@@ -45,47 +46,53 @@
        (reduce into [])))
 
 (defn maybe-swap
-  [update-state-fn dist-fn detect-neg? paths {:keys [from to e]}]
+  [update-state-fn path-fn dist-fn detect-neg? paths {:keys [from to e]}]
   (let [alt-path (-> paths
-                     from
+                     (path-fn from)
                      (cond-pred-> ((complement nil?)) (conj e)))
         alt-dist (dist-fn alt-path)]
     (cond-pred->
      paths
-     (-> to
+     (-> (path-fn to)
          dist-fn
          (> alt-dist))
      (-> (cond-> detect-neg? (do (throw (ex-info "Negative weight cycle" {}))))
          (update-state-fn to alt-path alt-dist)))))
 
 (defn dijkstra-shortest-path
-  [g paths successor-fn dist-fn]
-  (let [h               (fh/fibonacci-heap)
-        h-nodes         (->> g
-                             nodes
-                             (reduce (fn [m n]
-                                       (->> n
-                                            (fh/add! h Integer/MAX_VALUE)
-                                            (assoc m n)))
-                                     {}))
-        dec-key!        (fn [k v] (fh/decrease-key! h (h-nodes k) (int v) k))
-        update-state-fn (fn [state to alt-path alt-dist]
-                          (dec-key! to alt-dist)
-                          (assoc state to alt-path))
-        source          (-> paths
-                            keys
-                            first)]
-    (dec-key! source 0)
-    (loop [paths paths]
-      (let [from  (second (fh/remove-min! h))
+  [_ paths successor-fn dist-fn & {:keys [use-priority-map?]}]
+  (let [update-state-fn (fn [state to alt-path alt-dist]
+                          (-> state
+                              (assoc-in [:queue to] alt-dist)
+                              (assoc-in [:paths to] alt-path)))]
+    (loop [state {:paths paths
+                  :queue (assoc (if use-priority-map?
+                                  (pm/priority-map)
+                                  (fh/make-heap))
+                                (-> paths
+                                    keys
+                                    first)
+                                0)}]
+      (let [from  (-> state
+                      :queue
+                      peek
+                      key)
             state (->> from
                        successor-fn
                        (reduce (partial maybe-swap
                                         update-state-fn
+                                        (fn [state n]
+                                          (-> state
+                                              :paths
+                                              n))
                                         dist-fn
                                         false)
-                               paths))]
-        (if (fh/empty? h) state (recur state))))))
+                               (update state :queue pop)))]
+        (if (-> state
+                :queue
+                empty?)
+          (:paths state)
+          (recur state))))))
 
 (defn bellman-ford-shortest-path
   [g paths successor-fn dist-fn & {:keys [skip-neg-detect?]}]
@@ -102,6 +109,7 @@
                             (reduce (partial maybe-swap
                                              (fn [state to alt-path _]
                                                (assoc state to alt-path))
+                                             (fn [state n] (state n))
                                              dist-fn
                                              detect-neg?)
                                     paths)))

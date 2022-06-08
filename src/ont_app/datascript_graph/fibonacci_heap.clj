@@ -1,4 +1,9 @@
-(ns ont-app.datascript-graph.fibonacci-heap)
+(ns ont-app.datascript-graph.fibonacci-heap
+  (:require
+   [w01fe.fibonacci-heap.core :as fh])
+  (:import
+   (clojure.lang ILookup IPersistentMap IPersistentStack IReduce MapEntry)
+   (w01fe.fibonacci_heap FibonacciHeap)))
 
 (defprotocol Heap
   (delete-min [h])
@@ -181,7 +186,7 @@
       h
       (recur (get-> :right h x) (set-> :parent h x nil)))))
 
-(defrecord FibonacciHeap [data min cmp]
+(defrecord AFibonacciHeap [data min cmp]
   Heap
     (delete-min [h]
       (let [orig-h h]
@@ -231,13 +236,80 @@
             (set-min h k)))))
     (get-min [h] (:min h)))
 
-(defn make-heap ([cmp] (->FibonacciHeap {} nil cmp)) ([] (make-heap <)))
+(defn a-make-heap ([cmp] (->AFibonacciHeap {} nil cmp)) ([] (a-make-heap <)))
 
-(let [h (-> (make-heap)
-            (insert 1)
-            (insert 2)
-            (insert 3)
-            (insert 4))]
-  (-> h
-      (delete 2)
-      get-min))
+(comment
+  (let [h (-> (a-make-heap)
+              (insert 1)
+              (insert 2)
+              (insert 3)
+              (insert 4))]
+    (-> h
+        (delete 2)
+        get-min)))
+
+(deftype MyFibonacciHeap [^FibonacciHeap h ^:unsynchronized-mutable node-map]
+  Object
+    (toString [this] (str (.seq this)))
+  IPersistentMap
+    (count [_] (.size h))
+    (assoc [this item priority]
+      (if-let [node (node-map item)]
+        (do (fh/decrease-key! h node priority item) this)
+        (let [node (fh/add! h priority item)]
+          (set! node-map (assoc node-map item node))
+          this)))
+    (empty [_] (MyFibonacciHeap. (fh/fibonacci-heap) {}))
+    (cons [this [k v]] (assoc this k v))
+    (containsKey [_ item] (contains? node-map item))
+    (entryAt [_ k]
+      (when-let [node (node-map k)]
+        (fh/node->entry node)))
+    (seq [_]
+      (when-not (fh/empty? h)
+        (->> h
+             fh/peek-seq
+             (map second)
+             seq)))
+    (without [this item]
+      (fh/remove! h (node-map item))
+      (set! node-map (dissoc node-map item))
+      this)
+  ILookup
+    (valAt [_ item]
+      (when-let [node (node-map item)]
+        (fh/node-key node)))
+    (valAt [this item not-found] (or (get this item) not-found))
+  IPersistentStack
+    (peek [_]
+      (let [node (.min h)]
+        (MapEntry. (.getData node) (.getKey node))))
+    (pop [this] (fh/remove-min! h) this)
+  IReduce
+    (reduce [this f]
+      (let [val (peek this)]
+        (pop this)
+        (reduce f val this)))
+    (reduce [this f start]
+      (loop [ret start]
+        (if (empty? this)
+          ret
+          (let [val (peek this)]
+            (pop this)
+            (let [ret (f ret val)]
+              (if (reduced? ret) @ret (recur ret))))))))
+
+(defmethod print-method MyFibonacciHeap [o w] (print-method (seq o) w))
+
+(defn make-heap [] (MyFibonacciHeap. (fh/fibonacci-heap) {}))
+
+(comment
+  (let [queue (-> (make-heap)
+                  (assoc :a 1)
+                  (assoc :b 2)
+                  (assoc :c 3)
+                  (assoc :d 0))]
+    (println queue)
+    (reduce (fn [v k] (when (= k :a) (assoc queue :c 1)) (conj v k))
+            []
+            queue)))

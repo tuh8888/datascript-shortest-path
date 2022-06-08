@@ -5,7 +5,7 @@
    [clojure.set  :as set]))
 
 (deftest insert-test
-  (let [h (sut/make-heap)]
+  (let [h (sut/a-make-heap)]
     (is (= 1
            (-> h
                (sut/insert 1)
@@ -36,7 +36,7 @@
                (->> [a b]
                     (map orig)
                     (apply <)))
-        h    (sut/make-heap cmp)]
+        h    (sut/a-make-heap cmp)]
     (is (= :b
            (-> h
                (sut/insert :a)
@@ -49,7 +49,7 @@
                sut/get-min)))))
 
 (deftest delete-min-test
-  (let [h (-> (sut/make-heap)
+  (let [h (-> (sut/a-make-heap)
               (sut/insert 1)
               (sut/insert 2)
               (sut/insert 3))]
@@ -70,7 +70,7 @@
                sut/get-min)))))
 
 (deftest delete
-  (let [h (-> (sut/make-heap)
+  (let [h (-> (sut/a-make-heap)
               (sut/insert 1)
               (sut/insert 2)
               (sut/insert 3)
