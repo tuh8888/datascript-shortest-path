@@ -1,49 +1,36 @@
-(ns ont-app.datascript-graph.fibonacci-heap
-  (:require
-   [ont-app.datascript-graph.util :refer [cond-pred->]]
-   [clojure.zip :as zip]))
+(ns ont-app.datascript-graph.fibonacci-heap)
 
-#_(defprotocol Heap
-    (delete [h k])
-    (insert [h k])
-    (get-min [h]))
+(defprotocol Heap
+  (delete-min [h])
+  (insert [h k])
+  (get-min [h]))
 
 (defrecord Node [parent child right left degree mark])
 
-(defrecord FibonacciHeap [data min cmp]
-  #_Heap
-  #_(delete [h k])
-  #_(insert [h k])
-  #_(get-min [h]))
+(defn make-node
+  [k]
+  {:left   k
+   :right  k
+   :mark   false
+   :degree 0}
+  #_(->Node nil nil k k 0 false))
+
+(defn get-degree [h k] (get-in h [:data k :degree]))
+(defn inc-degree [h k] (update-in h [:data k :degree] inc))
+(defn dec-degree [h k] (update-in h [:data k :degree] dec))
+
+(defn get-mark [h k] (get-in h [:data k :mark]))
+(defn set-mark [h k x] (assoc-in h [:data k :mark] x))
 
 (deftype Nav [ops])
 
 (defn nav [& ops] (Nav. ops))
-(nav :left :right)
-
-(defn make-heap ([cmp] (->FibonacciHeap {} nil cmp)) ([] (make-heap <)))
-
-(defn make-node [k] (->Node nil nil k k 0 false))
-
-(defn get-min [h] (:min h))
 
 (defn get->
   [h op k]
   (let [k (if (= ::min k) (get-min h) k)]
     (cond (instance? Nav op) (reduce (fn [k op] (get-> h op k)) k (.ops op))
           :else              (get-in h [:data k op]))))
-
-(comment
-  (get-> {:data {:hi  {:left :bye}
-                 :bye {:right 2}}}
-         (nav :left :right)
-         :hi))
-
-(defn get-degree [h k] (get-in h [:data k :degree]))
-(defn get-mark [h k] (get-in h [:data k :mark]))
-
-
-(defn compare-keys [h a b] ((:cmp h) a b))
 
 (defn set->
   [h loc k x]
@@ -55,60 +42,24 @@
         x          (resolve-k x)]
     (assoc-in h [:data k loc] x)))
 
+(comment
+  (get-> {:data {:hi  {:left :bye}
+                 :bye {:right 2}}}
+         (nav :left :right)
+         :hi))
 
-(defn set-mark [h k x] (assoc-in h [:data k :mark] x))
+(defn compare-keys
+  [h a b]
+  (cond (nil? a) false
+        (nil? b) true
+        :else    ((:cmp h) a b)))
 
 (defn set-min [h k] (assoc h :min k))
 
-(defn inc-degree [h k] (update-in h [:data k :degree] inc))
-(defn dec-degree [h k] (update-in h [:data k :degree] dec))
-
-(defn cut
-  [h node x]
-  (let [xl [(nav :left) x]
-        xr [(nav :right) x]
-        h  (-> h
-               (set-> :right [(nav :left) x] [(nav :right) x])
-               (set-> :left [(nav :right) x] [(nav :left) x])
-               (dec-degree node))
-        h  (cond (-> h
-                     (get-degree node)
-                     zero?)
-                 (set-> :child h node nil)
-                 (-> h
-                     (get-> :child node)
-                     (= x))
-                 (set-> :child h node [(nav :right) x]))]
-    (-> h
-        (set-> :right x ::min)
-        (set-> :left x [(nav :left) ::min])
-        (set-> :left ::min x)
-        (set-> :right [(nav :left) x] x)
-        (set-> :parent x nil)
-        (set-mark x false))))
-
-(defn cascading-cut
-  [h node]
-  (let [z (get-> h :parent node)]
-    (cond-> h
-      z ((fn [h]
-           (if (get-mark h node)
-             (-> h
-                 (cut z node)
-                 (cascading-cut z))
-             (set-mark h node true)))))))
-
-(defn insert
-  [h node]
-  (let [h (assoc-in h [:data node] (make-node node))]
-    (if (get-min h)
-      (-> h
-          (set-> :right node ::min)
-          (set-> :left node [(nav :left) ::min])
-          (set-> :left ::min node)
-          (set-> :right [(nav :left) node] node)
-          (cond-> (compare-keys h node (get-min h)) (set-min node)))
-      (set-min h node))))
+(defn maybe-set-min
+  [h k]
+  (cond-> h
+    (compare-keys h k (get-min h)) (assoc :min k)))
 
 (defn link
   [h node new-parent]
@@ -130,14 +81,13 @@
         (inc-degree new-parent)
         (set-mark new-parent false))))
 
-
 (defn consolidate
   [h]
   (let [[start h A]
         (loop [start (get-min h)
                w     start
                h     h
-               A     {}]
+               A     []]
           (let [x w
                 next-w (get-> h :right w)
                 d (get-degree h x)
@@ -149,8 +99,7 @@
                        h      h
                        A      A]
                   (if-let [y (get A d)]
-                    (let [[x y]  (cond-> [x y]
-                                   (compare-keys h y x) reverse)
+                    (let [[x y]  (if (compare-keys h x y) [y x] [x y])
                           start  (cond->> start (= y start) (get-> h :right))
                           next-w (cond->> next-w (= y next-w) (get-> h :right))
                           h      (link h y x)]
@@ -161,51 +110,134 @@
             (if (= w start) [start h A] (recur w start h A))))
         h (set-min h start)]
     (->> A
-         vals
          (remove nil?)
-         (reduce (fn [h a]
-                   (cond-> h
-                     (compare-keys h a (get-min h)) (set-min a)))
-                 h))))
+         (reduce (fn [h a] (maybe-set-min h a)) h))))
 
-(defn remove-min
-  [h]
-  (let [z (get-min h)]
-    (if (nil? z)
+(defn cut
+  [h k x min]
+  (let [h (-> h
+              (set-> :right [(nav :left) x] [(nav :right) x])
+              (set-> :left [(nav :right) x] [(nav :left) x])
+              (dec-degree k))
+        h (cond (-> h
+                    (get-degree k)
+                    zero?)
+                (set-> h :child k nil)
+                (-> h
+                    (get-> :child k)
+                    (= x))
+                (set-> h :child k [(nav :right) x])
+                :else h)]
+    (-> h
+        (set-> :right x min)
+        (set-> :left x [(nav :left) min])
+        (set-> :left min x)
+        (set-> :right [(nav :left) x] x)
+        (set-> :parent x nil)
+        (set-mark x false))))
+
+(defn cascading-cut
+  [h k min]
+  (if-let [z (get-> h :parent k)]
+    (if (get-mark h k)
+      (-> h
+          (cut z k min)
+          (cascading-cut z min))
+      (set-mark h k true))
+    h))
+
+(defn decrease-key
+  [h k delete?]
+  (let [orig-h h
+        y      (get-> h :parent k)
+        h      (cond-> h
+                 (and (not (nil? y)) (or delete? (compare-keys h k y)))
+                 (-> (cut y k (get-min h))
+                     (cascading-cut y (get-min h))))
+        h      (cond-> h
+                 (or delete? (compare-keys h k (get-min h))) (set-min k))]
+    #_(println (clojure.data/diff (:data orig-h) (:data h)))
+    h))
+
+(defn delete
+  [h k]
+  (let [orig-cmp (:cmp h)
+        new-cmp  (fn [a b]
+                   (cond (= k a) false
+                         (= k b) true
+                         :else   (orig-cmp a b)))]
+    (-> h
+        (assoc :cmp new-cmp)
+        (decrease-key k true)
+        delete-min
+        (assoc :cmp orig-cmp))))
+
+
+(defn remove-parents
+  [h z]
+  (loop [x (get-> h (nav :right :child) z)
+         h h]
+    (if (= x (get-> h :child z))
       h
-      (let [h (cond-> h
-                (get-> h :child z)
-                ((fn [h]
-                   (let [h            (set-> h :parent [(nav :child) z] nil)
-                         h            (loop [x (get-> h (nav :right :child) z)
-                                             h h]
-                                        (if (= x (get-> h :child z))
-                                          h
-                                          (recur (get-> :right h x)
-                                                 (set-> :parent h x nil))))
-                         min-left     (get-> :left h z)
-                         z-child-left (get-> (nav :left :child) h z)]
-                     (-> h
-                         (set-> :left z z-child-left)
-                         (set-> :right z-child-left z)
-                         (set-> :left [(nav :child) z] min-left)
-                         (set-> :right min-left [(nav :child) z]))))))
-            h (-> h
-                  (set-> :right [(nav :left) z] [(nav :right) z])
-                  (set-> :left [(nav :right) z] [(nav :left) z]))]
-        (if (= z (get-> h :right z))
-          (set-min h nil)
-          (-> h
-              (set-min (get-> h :right z))
-              consolidate
-              (update :data dissoc z)))))))
+      (recur (get-> :right h x) (set-> :parent h x nil)))))
 
-(let [orig {:a 3
-            :b 2
-            :c 4}]
-  (-> (make-heap (fn [a b] (< (orig a) (orig b))))
-      (insert :a)
-      (insert :b)
-      (insert :c)
-      remove-min
-      ((juxt get-min (comp keys :data)))))
+(defrecord FibonacciHeap [data min cmp]
+  Heap
+    (delete-min [h]
+      (let [orig-h h]
+        (if (nil? (get-min h))
+          h
+          (let [h (->
+                    h
+                    (cond->
+                      (get-> h :child ::min)
+                      ((fn [h]
+                         (let [h            (-> h
+                                                (set-> :parent
+                                                       [(nav :child) ::min]
+                                                       nil)
+                                                (remove-parents ::min))
+                               min-left     (get-> h :left ::min)
+                               z-child-left (get-> h (nav :left :child) ::min)]
+                           (-> h
+                               (set-> :left ::min z-child-left)
+                               (set-> :right z-child-left ::min)
+                               (set-> :left [(nav :child) ::min] min-left)
+                               (set-> :right min-left [(nav :child) ::min]))))))
+                    (set-> :right [(nav :left) ::min] [(nav :right) ::min])
+                    (set-> :left [(nav :right) ::min] [(nav :left) ::min]))
+                z (get-min h)]
+            (println (->> h
+                          :data
+                          #_(clojure.data/diff (:data orig-h))
+                          #_(take 2)))
+            (-> (if (= z (get-> h :right ::min))
+                    (set-min h nil)
+                    (-> h
+                        (set-min (get-> h :right z))
+                        consolidate))
+                (update :data dissoc z))))))
+    (insert [h k]
+      (if (contains? (:data h) k)
+        (decrease-key h k false)
+        (let [h (assoc-in h [:data k] (make-node k))]
+          (if (get-min h)
+            (-> h
+                (set-> :right k ::min)
+                (set-> :left k [(nav :left) ::min])
+                (set-> :left ::min k)
+                (set-> :right [(nav :left) k] k)
+                (maybe-set-min k))
+            (set-min h k)))))
+    (get-min [h] (:min h)))
+
+(defn make-heap ([cmp] (->FibonacciHeap {} nil cmp)) ([] (make-heap <)))
+
+(let [h (-> (make-heap)
+            (insert 1)
+            (insert 2)
+            (insert 3)
+            (insert 4))]
+  (-> h
+      (delete 2)
+      get-min))
