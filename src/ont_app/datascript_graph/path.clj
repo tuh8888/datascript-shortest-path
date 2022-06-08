@@ -45,37 +45,42 @@
        (reduce into [])))
 
 (defn maybe-swap
-  [dist-fn detect-neg? [paths queue] {:keys [from to e]}]
-  (let [alt-path  (-> from
-                      paths
-                      (cond-pred-> ((complement nil?)) (conj e)))
-        orig-dist (-> to
-                      paths
-                      dist-fn)
-        alt-dist  (dist-fn alt-path)]
-    (if (< alt-dist orig-dist)
-      (let [paths (assoc paths to alt-path)
-            queue (assoc queue to alt-dist)]
+  [dist-fn detect-neg? state {:keys [from to e]}]
+  (let [alt-path (-> state
+                     (get-in [:paths from])
+                     (cond-pred-> ((complement nil?)) (conj e)))
+        alt-dist (dist-fn alt-path)]
+    (cond-pred->
+     state
+     (-> :paths
+         to
+         dist-fn
+         (> alt-dist))
+     ((fn [state]
         (when detect-neg? (throw (ex-info "Negative weight cycle" {})))
-        [paths queue])
-      [paths queue])))
+        (-> state
+            (assoc-in [:paths to] alt-path)
+            (assoc-in [:queue to] alt-dist)))))))
 
 (defn dijkstra-shortest-path
-  [_ paths successor-fn dist-fn]
-  (let [[source path] (first paths)]
-    (loop [queue (-> (pm/priority-map)
-                     (assoc source (dist-fn path)))
-           paths paths]
-      (let [from          (key (peek queue))
-            queue         (pop queue)
-            [paths queue] (->> from
-                               successor-fn
-                               (reduce (partial maybe-swap dist-fn false)
-                                       [paths queue]))]
-        (if (empty? queue) paths (recur queue paths))))))
+  [_ state successor-fn dist-fn]
+  (loop [from  (-> state
+                   :paths
+                   first)
+         state (assoc state :queue (pm/priority-map))]
+    (let [state (->> from
+                     key
+                     successor-fn
+                     (reduce (partial maybe-swap dist-fn false) state))]
+      (if (empty? (:queue state))
+        state
+        (recur (-> state
+                   :queue
+                   peek)
+               (update state :queue pop))))))
 
 (defn bellman-ford-shortest-path
-  [g acc successor-fn dist-fn & {:keys [skip-neg-detect?]}]
+  [g state successor-fn dist-fn & {:keys [skip-neg-detect?]}]
   (let [E (edges g successor-fn)
         n (-> g
               nodes
@@ -84,12 +89,11 @@
         (cond-> skip-neg-detect? dec)
         range
         (->> (map (partial = (dec n)))
-             (reduce (fn [paths detect-neg?]
+             (reduce (fn [state detect-neg?]
                        (->> E
                             (reduce (partial maybe-swap dist-fn detect-neg?)
-                                    [paths {}])
-                            first))
-                     acc)))))
+                                    state)))
+                     state)))))
 
 (defn shortest-path
   [g
@@ -101,11 +105,13 @@
     :or   {alg ::dijkstra}}]
   (let [dist-fn      (partial dist-fn g)
         successor-fn (partial successor-fn g)
-        acc          {source []}
+        state        {:paths {source []}}
         f            (if (or detect-neg? (= alg ::bellman-ford))
                        bellman-ford-shortest-path
                        dijkstra-shortest-path)]
-    (f g acc successor-fn dist-fn)))
+    (-> g
+        (f state successor-fn dist-fn)
+        :paths)))
 
 (defn johnson-all-pairs-shortest-paths
   "Finds the shortest paths between all pairs of nodes using Johnson's algorithm."
