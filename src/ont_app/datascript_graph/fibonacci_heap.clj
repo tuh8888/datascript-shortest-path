@@ -86,37 +86,36 @@
 (deftype FibonacciHeap [min-node cmp node-map]
   Heap
     (consolidate [_]
-      (let [A     (make-array Atom 45)
-            start (atom min-node)
-            w     (atom min-node)]
-        (loop []
-          (let [[x next-w d]
-                (loop [x      @w
-                       next-w (:right @@w)
-                       d      (:degree @x)]
-                  (if (nil? (aget A d))
-                    [x next-w d]
-                    (let [y     (aget A d)
-                          [x y] (if (not (compare-priorities cmp x y))
-                                  [y x]
-                                  [x y])]
-                      (when (= y @start) (reset! start (:right @@start)))
-                      (let [next-w (if (= y next-w) (:right @next-w) next-w)]
-                        (link y x)
-                        (aset A d nil)
-                        (recur x next-w (inc d))))))]
-            (aset A d x)
-            (reset! w next-w))
-          (when (not= @w @start) (recur)))
-        (let [this (FibonacciHeap. @start cmp node-map)]
-          (reduce
-           (fn [this a]
-             (if (and (not (nil? a))
-                      (compare-priorities (.cmp this) a (.min-node this)))
-               (FibonacciHeap. a cmp node-map)
-               this))
-           this
-           A))))
+      (let [[A start]
+            (loop [A     {}
+                   start min-node
+                   w     min-node]
+              (let [[A start x w d]
+                    (loop [A      A
+                           start  start
+                           x      w
+                           next-w (:right @w)
+                           d      (:degree @x)]
+                      (if (nil? (get A d))
+                        [A start x next-w d]
+                        (let [y      (get A d)
+                              [x y]  (if (not (compare-priorities cmp x y))
+                                       [y x]
+                                       [x y])
+                              start  (if (= y start) (:right @start) start)
+                              next-w (if (= y next-w) (:right @next-w) next-w)]
+                          (link y x)
+                          (recur (assoc A d nil) start x next-w (inc d)))))
+                    A (assoc A d x)]
+                (if (not= w start) (recur A start w) [A start])))]
+        (->> A
+             vals
+             (remove nil?)
+             (reduce (fn [this a]
+                       (if (compare-priorities (.cmp this) a (.min-node this))
+                         (FibonacciHeap. a cmp node-map)
+                         this))
+                     (FibonacciHeap. start cmp node-map)))))
     (decrease-priority [this k priority]
       (decrease-priority this k priority false))
     (decrease-priority [this k priority delete?]
