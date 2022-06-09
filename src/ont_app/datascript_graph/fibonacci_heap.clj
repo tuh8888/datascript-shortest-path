@@ -19,10 +19,14 @@
     node))
 
 (defn compare-keys
-  [h a b]
-  (cond (nil? a) false
-        (nil? b) true
-        :else    ((:cmp h) a b)))
+  [h n1 n2]
+  (let [k1 (cond-> n1
+             (instance? Atom n1) (-> deref
+                                     :key))
+        k2 (cond-> n2
+             (instance? Atom n2) (-> deref
+                                     :key))]
+    ((:cmp @h) k1 k2)))
 
 (defrecord AFibonacciHeap [min cmp])
 
@@ -86,7 +90,7 @@
             d      (atom (:degree @@x))]
         (while (not (nil? (aget A @d)))
                (let [y (atom (aget A @d))]
-                 (when (> (compare (:key @@x) (:key @@y)) 0)
+                 (when (not (compare-keys this @x @y))
                    (let [temp @y]
                      (reset! y @x)
                      (reset! x temp)))
@@ -100,21 +104,21 @@
       (when (not= @w @start) (recur)))
     (swap! this assoc :min @start)
     (doseq [a A]
-      (when (and (not (nil? a)) (< (compare (:key a) (:key (:min @this))) 0))
+      (when (and (not (nil? a)) (compare-keys this a (:min @this)))
         (swap! this assoc :min a)))))
 
 (defn decrease-key
   ([this x new-data k] (decrease-key this x new-data k false))
   ([this x new-data k delete?]
-   (when (and (not delete?) (> (compare k (:key @x)) 0))
+   (when (and (not delete?) (compare-keys this k x))
      (throw (ex-info "cannot inccrease key value" {})))
    (swap! x assoc :key k)
    (swap! x assoc :data new-data)
    (let [y (:parent @x)]
-     (when (and (not (nil? y)) (or delete? (< (compare k (:key @y)) 0)))
+     (when (and (not (nil? y)) (or delete? (compare-keys this x y)))
        (cut y x (:min @this))
        (cascading-cut y (:min @this)))
-     (when (or delete? (< (compare k (:key @(:min @this))) 0))
+     (when (or delete? (compare-keys this x (:min @this)))
        (swap! this assoc :min x)))))
 
 (defn remove-min
@@ -151,7 +155,7 @@
           (swap! node assoc :left (:left @(:min @this)))
           (swap! (:min @this) assoc :left node)
           (swap! (:left @node) assoc :right node)
-          (when (< (compare k (:key @(:min @this))) 0)
+          (when (compare-keys this node (:min @this))
             (swap! this assoc :min node)))
       (swap! this assoc :min node))
     node))
