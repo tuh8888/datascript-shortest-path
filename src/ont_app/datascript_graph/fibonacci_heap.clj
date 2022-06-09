@@ -6,69 +6,69 @@
                          MapEntry
                          Atom)))
 
-(defrecord ANode [parent child right left degree mark])
+(defrecord ANode [priority key parent child right left degree mark])
 
 (defn make-node
   [k x]
-  (let [node (atom (map->ANode {:key    k
-                                :data   x
-                                :mark   false
-                                :degree 0}))]
+  (let [node (atom (map->ANode {:priority k
+                                :key      x
+                                :mark     false
+                                :degree   0}))]
     (swap! node assoc :right node)
     (swap! node assoc :left node)
     node))
 
-(defn compare-keys
+(defn compare-priorities
   [h n1 n2]
-  (let [k1 (cond-> n1
+  (let [p1 (cond-> n1
              (instance? Atom n1) (-> deref
-                                     :key))
-        k2 (cond-> n2
+                                     :priority))
+        p2 (cond-> n2
              (instance? Atom n2) (-> deref
-                                     :key))]
-    ((:cmp @h) k1 k2)))
+                                     :priority))]
+    ((:cmp @h) p1 p2)))
 
 (defrecord AFibonacciHeap [min cmp])
 
 (defn cut
-  [this x min]
-  (swap! (:left @x) assoc :right (:right @x))
-  (swap! (:left @x) assoc :left (:left @x))
-  (swap! this update :degree dec)
-  (if (= (:degree @this) 0)
-    (swap! this assoc :child nil)
-    (when (= (:child this) x) (swap! this assoc :child (:right @x))))
-  (swap! x assoc :right min)
-  (swap! x assoc :left (:left @min))
-  (swap! min assoc :left x)
-  (swap! (:left @x) assoc :right x)
-  (swap! x assoc :parent nil)
-  (swap! x assoc :mark false))
+  [node other-node min-node]
+  (swap! (:left @other-node) assoc :right (:right @other-node))
+  (swap! (:left @other-node) assoc :left (:left @other-node))
+  (swap! node update :degree dec)
+  (if (= (:degree @node) 0)
+    (swap! node assoc :child nil)
+    (when (= (:child node) other-node)
+      (swap! node assoc :child (:right @other-node))))
+  (swap! other-node assoc :right min-node)
+  (swap! other-node assoc :left (:left @min-node))
+  (swap! min-node assoc :left other-node)
+  (swap! (:left @other-node) assoc :right other-node)
+  (swap! other-node assoc :parent nil)
+  (swap! other-node assoc :mark false))
 
 (defn cascading-cut
-  [this min]
-  (let [z (:parent @this)]
+  [node min-node]
+  (let [z (:parent @node)]
     (when (not (nil? z))
-      (if (:mark @this)
-        (do (cut z this min) (cascading-cut z min))
-        (swap! this assoc :mark true)))))
-
+      (if (:mark @node)
+        (do (cut z node min-node) (cascading-cut z min-node))
+        (swap! node assoc :mark true)))))
 
 (defn link
-  [this parent]
-  (swap! (:left @this) assoc :right (:right @this))
-  (swap! (:right @this) assoc :left (:left @this))
-  (swap! this assoc :parent parent)
+  [node parent]
+  (swap! (:left @node) assoc :right (:right @node))
+  (swap! (:right @node) assoc :left (:left @node))
+  (swap! node assoc :parent parent)
   (if (= (:child @parent) nil)
-    (do (swap! parent assoc :child this)
-        (swap! this assoc :right this)
-        (swap! this assoc :left this))
-    (do (swap! this assoc :left (:child @parent))
-        (swap! this assoc :right (:right @(:child @parent)))
-        (swap! (:child @parent) assoc :right this)
-        (swap! (:right @this) assoc :left this)))
+    (do (swap! parent assoc :child node)
+        (swap! node assoc :right node)
+        (swap! node assoc :left node))
+    (do (swap! node assoc :left (:child @parent))
+        (swap! node assoc :right (:right @(:child @parent)))
+        (swap! (:child @parent) assoc :right node)
+        (swap! (:right @node) assoc :left node)))
   (swap! parent update :degree inc)
-  (swap! this assoc :mark false))
+  (swap! node assoc :mark false))
 
 #_(defn add-to-list
     [this l]
@@ -80,17 +80,17 @@
         (if (= this cur) l (recur cur l)))))
 
 (defn consolidate
-  [this]
+  [h]
   (let [A     (make-array Atom 45)
-        start (atom (:min @this))
-        w     (atom (:min @this))]
+        start (atom (:min @h))
+        w     (atom (:min @h))]
     (loop []
       (let [x      (atom @w)
             next-w (atom (:right @@w))
             d      (atom (:degree @@x))]
         (while (not (nil? (aget A @d)))
                (let [y (atom (aget A @d))]
-                 (when (not (compare-keys this @x @y))
+                 (when (not (compare-priorities h @x @y))
                    (let [temp @y]
                      (reset! y @x)
                      (reset! x temp)))
@@ -102,124 +102,117 @@
         (aset A @d @x)
         (reset! w @next-w))
       (when (not= @w @start) (recur)))
-    (swap! this assoc :min @start)
+    (swap! h assoc :min @start)
     (doseq [a A]
-      (when (and (not (nil? a)) (compare-keys this a (:min @this)))
-        (swap! this assoc :min a)))))
+      (when (and (not (nil? a)) (compare-priorities h a (:min @h)))
+        (swap! h assoc :min a)))))
 
-(defn decrease-key
-  ([this x new-data k] (decrease-key this x new-data k false))
-  ([this x new-data k delete?]
-   (when (and (not delete?) (compare-keys this k x))
-     (throw (ex-info "cannot inccrease key value" {})))
-   (swap! x assoc :key k)
-   (swap! x assoc :data new-data)
-   (let [y (:parent @x)]
-     (when (and (not (nil? y)) (or delete? (compare-keys this x y)))
-       (cut y x (:min @this))
-       (cascading-cut y (:min @this)))
-     (when (or delete? (compare-keys this x (:min @this)))
-       (swap! this assoc :min x)))))
-
-(defn remove-min
-  [this]
-  (let [z (:min @this)]
-    (if (nil? z)
-      this
-      (do (when (:child @z)
-            (swap! (:child @z) assoc :parent nil)
-            (let [x (atom (:right @(:child @z)))]
-              (while (not= @x (:child @z))
-                     (swap! @x assoc :parent nil)
-                     (reset! x (:right @@x))))
-            (let [min-left     (:left @(:min @this))
-                  z-child-left (:left @(:child @z))]
-              (swap! (:min @this) assoc :left z-child-left)
-              (swap! z-child-left assoc :right (:min @this))
-              (swap! (:child @z) assoc :left min-left)
-              (swap! min-left assoc :right (:child @z))))
-          (swap! (:left @z) assoc :right (:right @z))
-          (swap! (:right @z) assoc :left (:left @z))
-          (if (= z (:right @z))
-            (swap! this assoc :min nil)
-            (do (swap! this assoc :min (:right @z)) (consolidate this)))
-          #_(set! n (dec n))
-          (:data @z)))))
-
-
-(defn insert
-  [this x k]
-  (let [node (make-node k x)]
-    (if (:min @this)
-      (do (swap! node assoc :right (:min @this))
-          (swap! node assoc :left (:left @(:min @this)))
-          (swap! (:min @this) assoc :left node)
-          (swap! (:left @node) assoc :right node)
-          (when (compare-keys this node (:min @this))
-            (swap! this assoc :min node)))
-      (swap! this assoc :min node))
-    node))
-
-(defn delete [this x] (decrease-key this x (:data @x) 0 true) (remove-min this))
-
-(defn get-min [this] (:min @this))
-
-
-(defn fh-node->entry [n] [(:key @n) (:data @n)])
-
-(defn fh-add! [h k v] (insert h v k))
-
-(defn fh-decrease-key! [h n k v] (decrease-key h n v k))
-
-(defn fh-remove! [h n] (delete h n))
-
-(defn fh-node-key [n] (:key @n))
-
-(defn fh-remove-min!
-  [h]
-  (let [n (get-min h)]
-    [(:key @n) (remove-min h)]))
-
-(defn fh-empty? [this] (nil? (:min @this)))
+(defprotocol Heap
+  (decrease-priority [h k priority]
+                     [h k priority delete?]))
 
 (deftype MyAFibonacciHeap [^AFibonacciHeap h ^:unsynchronized-mutable node-map]
+  Heap
+    (decrease-priority [this k priority]
+      (decrease-priority this k priority false))
+    (decrease-priority [this k priority delete?]
+      (let [node (node-map k)]
+        (when (and (not delete?)
+                   (and (not (compare-priorities h priority node))
+                        ;; TODO this check should not be necessary for the tests to pass once immutability is implemented.
+                        (not (= priority (:priority @node)))))
+          (throw (ex-info "cannot increase priority value"
+                          (let [n1 priority
+                                n2 node
+                                p1 (cond-> n1
+                                     (instance? Atom n1) (-> deref
+                                                             :priority))
+                                p2 (cond-> n2
+                                     (instance? Atom n2) (-> deref
+                                                             :priority))]
+                            {:new     priority
+                             :old     (:priority @node)
+                             :check   ((:cmp @h) p1 p2)
+                             :cmp     (:cmp @h)
+                             :k1      p1
+                             :k2      p2
+                             :delete? delete?}))))
+        (swap! node assoc :priority priority)
+        (let [y (:parent @node)]
+          (when (and (not (nil? y)) (or delete? (compare-priorities h node y)))
+            (cut y node (:min @h))
+            (cascading-cut y (:min @h)))
+          (when (or delete? (compare-priorities h node (:min @h)))
+            (swap! h assoc :min node)))
+        this))
   Object
     (toString [this] (str (.seq this)))
   IPersistentMap
     (count [_] (.size h))
-    (assoc [this item priority]
-      (if-let [node (node-map item)]
-        (do (fh-decrease-key! h node priority item) this)
-        (let [node (fh-add! h priority item)]
-          (set! node-map (assoc node-map item node))
+    (assoc [this k priority]
+      (if (node-map k)
+        (decrease-priority this k priority)
+        (let [new-node (make-node priority k)]
+          (if (:min @h)
+            (do (swap! new-node assoc :right (:min @h))
+                (swap! new-node assoc :left (:left @(:min @h)))
+                (swap! (:min @h) assoc :left new-node)
+                (swap! (:left @new-node) assoc :right new-node)
+                (when (compare-priorities h new-node (:min @h))
+                  (swap! h assoc :min new-node)))
+            (swap! h assoc :min new-node))
+          (set! node-map (assoc node-map k new-node))
           this)))
     #_(empty [_] (MyFibonacciHeap. (fh/fibonacci-heap) {}))
     (cons [this [k v]] (assoc this k v))
-    (containsKey [_ item] (contains? node-map item))
+    (containsKey [_ k] (contains? node-map k))
     (entryAt [_ k]
       (when-let [node (node-map k)]
-        (fh-node->entry node)))
+        [(:priority @node) (:key @node)]))
     (seq [_]
-      (when-not (fh-empty? h)
+      (when-not (nil? (:min @h))
         (seq [1])
         #_(->> h
                fh-peek-seq
                (map second)
                seq)))
-    (without [this item]
-      (fh-remove! h (node-map item))
-      (set! node-map (dissoc node-map item))
-      this)
+    (without [this k]
+      (set! node-map (dissoc node-map k))
+      (-> this
+          (decrease-priority k 0 true)
+          pop))
   ILookup
     (valAt [_ item]
       (when-let [node (node-map item)]
-        (fh-node-key node)))
+        (:priority @node)))
     (valAt [this item not-found] (or (get this item) not-found))
   IPersistentStack
     (peek [_]
-      (let [node (get-min h)]
-        (MapEntry. (:data @node) (:key @node))))
-    (pop [this] (fh-remove-min! h) this)
+      (let [node (:min @h)]
+        (MapEntry. (:key @node) (:priority @node))))
+    (pop [this]
+      (let [z (:min @h)]
+        (if (nil? z)
+          h
+          (do (when (:child @z)
+                (swap! (:child @z) assoc :parent nil)
+                (let [x (atom (:right @(:child @z)))]
+                  (while (not= @x (:child @z))
+                         (swap! @x assoc :parent nil)
+                         (reset! x (:right @@x))))
+                (let [min-left     (:left @(:min @h))
+                      z-child-left (:left @(:child @z))]
+                  (swap! (:min @h) assoc :left z-child-left)
+                  (swap! z-child-left assoc :right (:min @h))
+                  (swap! (:child @z) assoc :left min-left)
+                  (swap! min-left assoc :right (:child @z))))
+              (swap! (:left @z) assoc :right (:right @z))
+              (swap! (:right @z) assoc :left (:left @z))
+              (if (= z (:right @z))
+                (swap! h assoc :min nil)
+                (do (swap! h assoc :min (:right @z)) (consolidate h)))
+              h)))
+      this)
   IReduce
     (reduce [this f]
       (let [val (peek this)]
