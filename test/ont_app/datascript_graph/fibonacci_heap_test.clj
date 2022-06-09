@@ -20,7 +20,7 @@
            (-> h
                (sut/insert 2)
                (sut/insert 1)
-               sut/delete-min
+               sut/remove-min
                (sut/insert 1)
                sut/get-min)))
     (is (= 2
@@ -28,7 +28,7 @@
                (sut/insert 2)
                (sut/insert 1)
                (sut/insert 1)
-               sut/delete-min
+               sut/remove-min
                sut/get-min))))
   (let [orig {:a 2
               :b 1}
@@ -56,7 +56,7 @@
     (is (= 1 (sut/get-min h)))
     (is (= 2
            (-> h
-               sut/delete-min
+               sut/remove-min
                sut/get-min))))
   (let [h (-> (reduce sut/insert
                       (sut/make-heap)
@@ -66,7 +66,7 @@
     (is (= -1
            (-> h
                (sut/insert -2)
-               sut/delete-min
+               sut/remove-min
                sut/get-min)))))
 
 (deftest delete

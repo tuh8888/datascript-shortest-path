@@ -2,30 +2,28 @@
   (:require
    [w01fe.fibonacci-heap.core :as fh])
   (:import
-   (clojure.lang ILookup IPersistentMap IPersistentStack IReduce MapEntry)
+   (clojure.lang ILookup IPersistentMap IPersistentStack IReduce MapEntry Atom)
    (w01fe.fibonacci_heap FibonacciHeap)))
 
-(defprotocol Heap
-  (delete-min [h])
-  (insert [h k])
-  (get-min [h]))
-
-(defrecord Node [parent child right left degree mark])
+(defrecord ANode [parent child right left degree mark])
 
 (defn make-node
-  [k]
-  {:left   k
-   :right  k
-   :mark   false
-   :degree 0}
-  #_(->Node nil nil k k 0 false))
+  [k x]
+  (let [node (atom (map->ANode {:key    k
+                                :data   x
+                                :mark   false
+                                :degree 0}))]
+    (swap! node assoc :right node)
+    (swap! node assoc :left node)
+    node))
 
-(defn get-degree [h k] (get-in h [:data k :degree]))
-(defn inc-degree [h k] (update-in h [:data k :degree] inc))
-(defn dec-degree [h k] (update-in h [:data k :degree] dec))
 
-(defn get-mark [h k] (get-in h [:data k :mark]))
-(defn set-mark [h k x] (assoc-in h [:data k :mark] x))
+(defn get-degree [h k] (get-in h [:nodes k :degree]))
+(defn inc-degree [h k] (update-in h [:nodes k :degree] inc))
+(defn dec-degree [h k] (update-in h [:nodes k :degree] dec))
+
+(defn get-mark [h k] (get-in h [:nodes k :mark]))
+(defn set-mark [h k x] (assoc-in h [:nodes k :mark] x))
 
 (deftype Nav [ops])
 
@@ -35,7 +33,7 @@
   [h op k]
   (let [k (if (= ::min k) (get-min h) k)]
     (cond (instance? Nav op) (reduce (fn [k op] (get-> h op k)) k (.ops op))
-          :else              (get-in h [:data k op]))))
+          :else              (get-in h [:nodes k op]))))
 
 (defn set->
   [h loc k x]
@@ -45,11 +43,11 @@
                        (cond->> k (should-nav k) (apply get-> h))))
         k          (resolve-k k)
         x          (resolve-k x)]
-    (assoc-in h [:data k loc] x)))
+    (assoc-in h [:nodes k loc] x)))
 
 (comment
-  (get-> {:data {:hi  {:left :bye}
-                 :bye {:right 2}}}
+  (get-> {:nodes {:hi  {:left :bye}
+                  :bye {:right 2}}}
          (nav :left :right)
          :hi))
 
@@ -59,194 +57,180 @@
         (nil? b) true
         :else    ((:cmp h) a b)))
 
-(defn set-min [h k] (assoc h :min k))
-
-(defn maybe-set-min
-  [h k]
-  (cond-> h
-    (compare-keys h k (get-min h)) (assoc :min k)))
-
-(defn link
-  [h node new-parent]
-  (let [h (-> h
-              (set-> :right [(nav :left) node] [(nav :right) node])
-              (set-> :left [(nav :right) node] [(nav :left) node])
-              (set-> :parent node new-parent))
-        h (if (get-> :child h new-parent)
-            (-> h
-                (set-> :left node [(nav :child) new-parent])
-                (set-> :right node [(nav :child :right) new-parent])
-                (set-> :right [(nav :child) new-parent] node)
-                (set-> :left [(nav :right) node] node))
-            (-> h
-                (set-> :child new-parent node)
-                (set-> :right node node)
-                (set-> :left node node)))]
-    (-> h
-        (inc-degree new-parent)
-        (set-mark new-parent false))))
-
-(defn consolidate
-  [h]
-  (let [[start h A]
-        (loop [start (get-min h)
-               w     start
-               h     h
-               A     []]
-          (let [x w
-                next-w (get-> h :right w)
-                d (get-degree h x)
-                [d x start next-w h A]
-                (loop [d      d
-                       x      x
-                       start  start
-                       next-w next-w
-                       h      h
-                       A      A]
-                  (if-let [y (get A d)]
-                    (let [[x y]  (if (compare-keys h x y) [y x] [x y])
-                          start  (cond->> start (= y start) (get-> h :right))
-                          next-w (cond->> next-w (= y next-w) (get-> h :right))
-                          h      (link h y x)]
-                      (recur (inc d) x start next-w h (assoc A d nil)))
-                    [d x start next-w h A]))
-                A (assoc A d x)
-                w next-w]
-            (if (= w start) [start h A] (recur w start h A))))
-        h (set-min h start)]
-    (->> A
-         (remove nil?)
-         (reduce (fn [h a] (maybe-set-min h a)) h))))
+(defrecord AFibonacciHeap [min cmp])
 
 (defn cut
-  [h k x min]
-  (let [h (-> h
-              (set-> :right [(nav :left) x] [(nav :right) x])
-              (set-> :left [(nav :right) x] [(nav :left) x])
-              (dec-degree k))
-        h (cond (-> h
-                    (get-degree k)
-                    zero?)
-                (set-> h :child k nil)
-                (-> h
-                    (get-> :child k)
-                    (= x))
-                (set-> h :child k [(nav :right) x])
-                :else h)]
-    (-> h
-        (set-> :right x min)
-        (set-> :left x [(nav :left) min])
-        (set-> :left min x)
-        (set-> :right [(nav :left) x] x)
-        (set-> :parent x nil)
-        (set-mark x false))))
+  [this x min]
+  (swap! (:left @x) assoc :right (:right @x))
+  (swap! (:left @x) assoc :left (:left @x))
+  (swap! this update :degree dec)
+  (if (= (:degree @this) 0)
+    (swap! this assoc :child nil)
+    (when (= (:child this) x) (swap! this assoc :child (:right @x))))
+  (swap! x assoc :right min)
+  (swap! x assoc :left (:left @min))
+  (swap! min assoc :left x)
+  (swap! (:left @x) assoc :right x)
+  (swap! x assoc :parent nil)
+  (swap! x assoc :mark false))
 
 (defn cascading-cut
-  [h k min]
-  (if-let [z (get-> h :parent k)]
-    (if (get-mark h k)
-      (-> h
-          (cut z k min)
-          (cascading-cut z min))
-      (set-mark h k true))
-    h))
-
-(defn decrease-key
-  [h k delete?]
-  (let [orig-h h
-        y      (get-> h :parent k)
-        h      (cond-> h
-                 (and (not (nil? y)) (or delete? (compare-keys h k y)))
-                 (-> (cut y k (get-min h))
-                     (cascading-cut y (get-min h))))
-        h      (cond-> h
-                 (or delete? (compare-keys h k (get-min h))) (set-min k))]
-    #_(println (clojure.data/diff (:data orig-h) (:data h)))
-    h))
-
-(defn delete
-  [h k]
-  (let [orig-cmp (:cmp h)
-        new-cmp  (fn [a b]
-                   (cond (= k a) false
-                         (= k b) true
-                         :else   (orig-cmp a b)))]
-    (-> h
-        (assoc :cmp new-cmp)
-        (decrease-key k true)
-        delete-min
-        (assoc :cmp orig-cmp))))
+  [this min]
+  (let [z (:parent @this)]
+    (when (not (nil? z))
+      (if (:mark @this)
+        (do (cut z this min) (cascading-cut z min))
+        (swap! this assoc :mark true)))))
 
 
-(defn remove-parents
-  [h z]
-  (loop [x (get-> h (nav :right :child) z)
-         h h]
-    (if (= x (get-> h :child z))
-      h
-      (recur (get-> :right h x) (set-> :parent h x nil)))))
+(defn link
+  [this parent]
+  (swap! (:left @this) assoc :right (:right @this))
+  (swap! (:right @this) assoc :left (:left @this))
+  (swap! this assoc :parent parent)
+  (if (= (:child @parent) nil)
+    (do (swap! parent assoc :child this)
+        (swap! this assoc :right this)
+        (swap! this assoc :left this))
+    (do (swap! this assoc :left (:child @parent))
+        (swap! this assoc :right (:right @(:child @parent)))
+        (swap! (:child @parent) assoc :right this)
+        (swap! (:right @this) assoc :left this)))
+  (swap! parent update :degree inc)
+  (swap! this assoc :mark false))
 
-(defrecord AFibonacciHeap [data min cmp]
-  Heap
-    (delete-min [h]
-      (let [orig-h h]
-        (if (nil? (get-min h))
-          h
-          (let [h (->
-                    h
-                    (cond->
-                      (get-> h :child ::min)
-                      ((fn [h]
-                         (let [h            (-> h
-                                                (set-> :parent
-                                                       [(nav :child) ::min]
-                                                       nil)
-                                                (remove-parents ::min))
-                               min-left     (get-> h :left ::min)
-                               z-child-left (get-> h (nav :left :child) ::min)]
-                           (-> h
-                               (set-> :left ::min z-child-left)
-                               (set-> :right z-child-left ::min)
-                               (set-> :left [(nav :child) ::min] min-left)
-                               (set-> :right min-left [(nav :child) ::min]))))))
-                    (set-> :right [(nav :left) ::min] [(nav :right) ::min])
-                    (set-> :left [(nav :right) ::min] [(nav :left) ::min]))
-                z (get-min h)]
-            (println (->> h
-                          :data
-                          #_(clojure.data/diff (:data orig-h))
-                          #_(take 2)))
-            (-> (if (= z (get-> h :right ::min))
-                    (set-min h nil)
-                    (-> h
-                        (set-min (get-> h :right z))
-                        consolidate))
-                (update :data dissoc z))))))
-    (insert [h k]
-      (if (contains? (:data h) k)
-        (decrease-key h k false)
-        (let [h (assoc-in h [:data k] (make-node k))]
-          (if (get-min h)
-            (-> h
-                (set-> :right k ::min)
-                (set-> :left k [(nav :left) ::min])
-                (set-> :left ::min k)
-                (set-> :right [(nav :left) k] k)
-                (maybe-set-min k))
-            (set-min h k)))))
-    (get-min [h] (:min h)))
+(defn add-to-list
+  [this l]
+  (loop [cur this
+         l   l]
+    (let [l   (conj l cur)
+          l   (if (not (nil? (:child cur))) (add-to-list @(:child cur) l) l)
+          cur @(:right cur)]
+      (if (= this cur) l (recur cur l)))))
 
-(defn a-make-heap ([cmp] (->AFibonacciHeap {} nil cmp)) ([] (a-make-heap <)))
+(defn consolidate
+  [this]
+  (println "here2" (:data @(:min @this)))
+  (let [A     (make-array Atom 45)
+        start (atom (:min @this))
+        w     (atom (:min @this))]
+    (loop []
+      (let [x      (atom @w)
+            next-w (atom (:right @@w))
+            d      (atom (:degree @@x))]
+        (println "here5" (:data @(:min @this)))
+        (while (not (nil? (aget A @d)))
+               (println "here7" (:data @(:min @this)))
+               (let [y (atom (aget A @d))]
+                 (when (> (compare (:key @@x) (:key @@y)) 0)
+                   (let [temp @y]
+                     (reset! y @x)
+                     (reset! x temp)))
+                 (println "here8" (:data @(:min @this)))
+                 (when (= @y @start) (reset! start (:right @@start)))
+                 (when (= @y @next-w) (reset! next-w (:right @@next-w)))
+                 (println "here9" (:data @(:min @this)))
+                 (println (:data @@y) (:data @@x))
+                 (link @y @x)
+                 (println "here10" (:data @(:min @this)))
+                 (aset A @d nil)
+                 (swap! d inc)))
+        (println "here6" (:data @(:min @this)))
+        (aset A @d @x)
+        (reset! w @next-w)
+        (println "here4" (:data @(:min @this))))
+      (when (not= @w @start) (recur)))
+    (println "here3" (:data @(:min @this)))
+    (swap! this assoc :min @start)
+    (doseq [a A]
+      (when (and (not (nil? a)) (< (compare (:key a) (:key (:min @this))) 0))
+        (swap! this assoc :min a)))))
 
 (comment
-  (let [h (-> (a-make-heap)
-              (insert 1)
-              (insert 2)
-              (insert 3)
-              (insert 4))]
-    (-> h
-        (delete 2)
-        get-min)))
+  (let [queue        (-> (a-make-heap))
+        (assoc :a 1) (assoc :b 2)
+        (assoc :c 3) (assoc :d 0)]
+    (println queue)
+    (reduce (fn [v k] (when (= k :a) (assoc queue :c 1)) (conj v k))
+            []
+            queue)))
+
+(comment
+  (let [h     (a-make-heap)
+        nodes (->> {:a 1
+                    :b 2
+                    :c 3
+                    :d 0
+                    #_#_:d 4}
+                   (reduce (fn [m [x k]]
+                             (assoc m x (insert h x k)))
+                           {}))]
+    (update-vals nodes (comp :key deref))
+    #_(doall (map (comp :data deref) nodes))
+    #_(decrease-key h)
+    #_(reduce (fn [v _] (conj v (remove-min h))) [] (range 3))
+    #_(:data @(:min @h))
+    #_[@h nodes]
+    #_(-> h
+          (delete 2)
+          get-min)))
+(defn remove-min
+  [this]
+  (let [z (:min @this)]
+    (if (nil? z)
+      this
+      (do (when (:child @z)
+            (swap! (:child @z) assoc :parent nil)
+            (let [x (atom (:right @(:child @z)))]
+              (while (not= @x (:child @z))
+                     (swap! @x assoc :parent nil)
+                     (reset! x (:right @@x))))
+            (let [min-left     (:left @(:min @this))
+                  z-child-left (:left @(:child @z))]
+              (swap! (:min @this) assoc :left z-child-left)
+              (swap! z-child-left assoc :right (:min @this))
+              (swap! (:child @z) assoc :left min-left)
+              (swap! min-left assoc :right (:child @z))))
+          (swap! (:left @z) assoc :right (:right @z))
+          (swap! (:right @z) assoc :left (:left @z))
+          (if (= z (:right @z))
+            (do (println "here") (swap! this assoc :min nil))
+            (do (swap! this assoc :min (:right @z)) (consolidate this)))
+          #_(set! n (dec n))
+          (:data @z)))))
+
+
+(defn insert
+  [this x k]
+  (let [node (make-node k x)]
+    (if (:min @this)
+      (do (swap! node assoc :right (:min @this))
+          (swap! node assoc :left (:left @(:min @this)))
+          (swap! (:min @this) assoc :left node)
+          (swap! (:left @node) assoc :right node)
+          (when (< (compare k (:key @(:min @this))) 0)
+            (swap! this assoc :min node)))
+      (swap! this assoc :min node))
+    node))
+
+(defn get-min [this] (:min @this))
+
+(defn a-make-heap
+  ([cmp] (atom (->AFibonacciHeap nil cmp)))
+  ([] (a-make-heap <)))
+
+(defmethod print-method ANode
+  [o w]
+  (print-method (:key o) w)
+  #_(let [remove-self (fn [n] (if (instance? Atom n) (:key @n) nil))]
+      (-> o
+          (update :right remove-self)
+          (update :left remove-self)
+          (update :child remove-self)
+          (update :parent remove-self)
+          (->> (into {}))
+          (print-method w))))
+
 
 (deftype MyFibonacciHeap [^FibonacciHeap h ^:unsynchronized-mutable node-map]
   Object
