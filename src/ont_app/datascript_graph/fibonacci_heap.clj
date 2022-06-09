@@ -188,12 +188,17 @@
           (let [node-map (dissoc node-map (node-get min-node :key))]
             (when (node-get z :child)
               (swap! (node-get z :child) assoc :parent nil)
-              (let [x (atom (node-get (node-get z :child) :right))]
-                (while (not= @x (node-get z :child))
-                       (swap! @x assoc :parent nil)
-                       (reset! x (node-get @x :right))))
+              (let [x (loop [x (-> z
+                                   (node-get :child)
+                                   (node-get :right))]
+                        (if (= x (node-get z :child))
+                          x
+                          (do (swap! x assoc :parent nil)
+                              (recur (node-get x :right)))))])
               (let [min-left     (node-get min-node :left)
-                    z-child-left (node-get (node-get z :child) :left)]
+                    z-child-left (-> z
+                                     (node-get :child)
+                                     (node-get :left))]
                 (swap! min-node assoc :left z-child-left)
                 (swap! z-child-left assoc :right min-node)
                 (swap! (node-get z :child) assoc :left min-left)
