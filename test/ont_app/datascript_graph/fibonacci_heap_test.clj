@@ -1,98 +1,102 @@
 (ns ont-app.datascript-graph.fibonacci-heap-test
   (:require
    [ont-app.datascript-graph.fibonacci-heap :as sut]
-   [clojure.test :refer [deftest testing is]]
-   [clojure.set  :as set]))
+   [clojure.test :refer [deftest is]]))
 
 (deftest insert-test
-  (let [h (sut/a-make-heap)]
+  (let [h (sut/make-heap)]
     (is (= 1
            (-> h
-               (sut/insert 1)
-               (sut/insert 2)
-               sut/get-min)))
+               (assoc 1 1)
+               (assoc 2 2)
+               peek
+               key)))
     (is (= 1
            (-> h
-               (sut/insert 2)
-               (sut/insert 1)
-               sut/get-min)))
+               (assoc 2 2)
+               (assoc 1 1)
+               peek
+               key)))
     (is (= 1
            (-> h
-               (sut/insert 2)
-               (sut/insert 1)
-               sut/remove-min
-               (sut/insert 1)
-               sut/get-min)))
+               (assoc 2 2)
+               (assoc 1 1)
+               pop
+               (assoc 1 1)
+               peek
+               key)))
     (is (= 2
            (-> h
-               (sut/insert 2)
-               (sut/insert 1)
-               (sut/insert 1)
-               sut/remove-min
-               sut/get-min))))
+               (assoc 2 2)
+               (assoc 1 1)
+               (assoc 1 1)
+               pop
+               peek
+               key))))
   (let [orig {:a 2
               :b 1}
         cmp  (fn [a b]
                (->> [a b]
                     (map orig)
                     (apply <)))
-        h    (sut/a-make-heap cmp)]
+        h    (sut/make-heap cmp)]
     (is (= :b
            (-> h
-               (sut/insert :a)
-               (sut/insert :b)
-               sut/get-min)))
+               (assoc :a :a)
+               (assoc :b :b)
+               peek
+               key)))
     (is (= :b
            (-> h
-               (sut/insert :b)
-               (sut/insert :a)
-               sut/get-min)))))
+               (assoc :b :b)
+               (assoc :a :a)
+               peek
+               key)))))
 
 (deftest delete-min-test
-  (let [h (-> (sut/a-make-heap)
-              (sut/insert 1)
-              (sut/insert 2)
-              (sut/insert 3))]
-    (is (= 1 (sut/get-min h)))
+  (let [h (-> (sut/make-heap)
+              (assoc 1 1)
+              (assoc 2 2)
+              (assoc 3 3))]
+    (is (= 1 (key (peek h))))
     (is (= 2
            (-> h
-               sut/remove-min
-               sut/get-min))))
-  (let [h (-> (reduce sut/insert
+               pop
+               peek
+               key))))
+  (let [h (-> (reduce (fn [h v] (assoc h v v))
                       (sut/make-heap)
                       (repeatedly 100 #(rand-int 100)))
-              (sut/insert -1))]
-    (is (= -1 (sut/get-min h)))
+              (assoc -1 -1))]
+    (is (= -1 (key (peek h))))
     (is (= -1
            (-> h
-               (sut/insert -2)
-               sut/remove-min
-               sut/get-min)))))
+               (assoc -2 -2)
+               pop
+               peek
+               first)))))
 
 (deftest delete
-  (let [h (-> (sut/a-make-heap)
-              (sut/insert 1)
-              (sut/insert 2)
-              (sut/insert 3)
-              (sut/insert 4))]
-    (is (= 1 (sut/get-min h)))
+  (let [h (-> (sut/make-heap)
+              (assoc 1 1)
+              (assoc 2 2)
+              (assoc 3 3)
+              (assoc 4 4))]
+    (is (= 1 (key (peek h))))
     (is (= 1
            (-> h
-               (sut/delete 2)
-               sut/get-min)))
+               (dissoc 2)
+               peek
+               key)))
     (is (= 3
            (-> h
-               (sut/delete 2)
-               (sut/delete 1)
-               sut/get-min)))
+               (dissoc 2)
+               (dissoc 1)
+               peek
+               key)))
     (is (= 3
            (-> h
-               (sut/delete 1)
-               (sut/delete 2)
-               sut/get-min)))
-    (:data h)
-    (-> h
-        (sut/delete 1)
-        (sut/delete 3)
-        #_(sut/delete 2)
-        sut/get-min)))
+               (dissoc 1)
+               (dissoc 2)
+               peek
+               key)))))
