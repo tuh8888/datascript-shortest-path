@@ -90,22 +90,23 @@
             start (atom min-node)
             w     (atom min-node)]
         (loop []
-          (let [x      (atom @w)
-                next-w (atom (:right @@w))
-                d      (atom (:degree @@x))]
-            (while (not (nil? (aget A @d)))
-                   (let [y (atom (aget A @d))]
-                     (when (not (compare-priorities cmp @x @y))
-                       (let [temp @y]
-                         (reset! y @x)
-                         (reset! x temp)))
-                     (when (= @y @start) (reset! start (:right @@start)))
-                     (when (= @y @next-w) (reset! next-w (:right @@next-w)))
-                     (link @y @x)
-                     (aset A @d nil)
-                     (swap! d inc)))
-            (aset A @d @x)
-            (reset! w @next-w))
+          (let [[x next-w d]
+                (loop [x      @w
+                       next-w (:right @@w)
+                       d      (:degree @x)]
+                  (if (nil? (aget A d))
+                    [x next-w d]
+                    (let [y     (aget A d)
+                          [x y] (if (not (compare-priorities cmp x y))
+                                  [y x]
+                                  [x y])]
+                      (when (= y @start) (reset! start (:right @@start)))
+                      (let [next-w (if (= y next-w) (:right @next-w) next-w)]
+                        (link y x)
+                        (aset A d nil)
+                        (recur x next-w (inc d))))))]
+            (aset A d x)
+            (reset! w next-w))
           (when (not= @w @start) (recur)))
         (let [this (FibonacciHeap. @start cmp node-map)]
           (reduce
