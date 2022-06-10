@@ -154,8 +154,6 @@
           n3 "baz"]
       (is (seq h))
       (is (= (sut/node-get n1 (.m h) :priority) 50))
-      #_(is (= (node-val n1) "foo"))
-      #_(is (= (node->entry n1) [50 "foo"]))
       (is (= 3 (count h)))
       (is (= ["foo" "bar" "baz"] (seq h)))
       (let [h (dissoc h n2)]
@@ -176,10 +174,9 @@
                                        (is (= (- (+ 2 n-elems) i) (count h)))
                                        (pop h))
                                      h))
-                h       (assoc h n3 1)
-                #_(decrease-key! h n3 [1] "boo")]
+                h       (assoc h n3 1)]
             (is (= (- (+ n-elems 2) removed) (count h)))
-            (is (= (peek h) [n3 #_"boo" 1]))
+            (is (= (peek h) [n3 1]))
             (let [h       (-> h
                               (dissoc n1)
                               (dissoc n3))
@@ -191,9 +188,5 @@
                                            (is (= [i i] (peek h)))
                                            (pop h)))
                                        h))]
-              #_(dotimes [i 50]
-                  (let [i (+ 50 i)]
-                    (is (= (peek-min h) [[i] i]))
-                    (is (= (remove-min! h) [[i] i]))))
-              (is (= (count h) 0))
+              (is (= 0 (count h)))
               (is (empty? h)))))))))
