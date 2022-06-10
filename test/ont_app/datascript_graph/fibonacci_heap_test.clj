@@ -160,10 +160,17 @@
         (is (= (count h) 2))
         (is (= ["foo" "baz"] (seq h)))
         (let [n-elems 100
-              c       (->> n-elems
-                           range
-                           shuffle
-                           #_((fn [c] (println "shuffled" c) c)))
+              c       [35 77 52 70 5 16 97 47 65 45 36 90 71 92 30 22 25 58 3 4
+                       64 42 37 83 23 13 85 84 28 62 87 20 74 78 88 73 46 79 53
+                       24 81 72 38 68 9 50 44 12 7 6 40 1 54 14 43 91 19 33 32
+                       93 17 69 11 34 56 61 80 63 66 39 48 2 10 60 94 95 49 15
+                       29 76 75 41 98 8 89 31 86 26 18 55 59 0 51 27 57 21 96 82
+                       67 99]
+              #_#_c
+                (->> n-elems
+                     range
+                     shuffle
+                     #_((fn [c] (println "shuffled" c) c)))
               h       (reduce (fn [h v] (assoc h v v)) h c)]
           (is (= (+ 2 n-elems) (count h)))
           (let [removed (min 50 n-elems)
