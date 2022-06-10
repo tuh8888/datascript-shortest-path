@@ -63,9 +63,9 @@
   [_ paths successor-fn dist-fn & {:keys [use-priority-map?]}]
   (let [update-state-fn (fn [state to alt-path alt-dist]
                           (-> state
-                              (cond-> (not ((:seen state) to)) (assoc-in [:queue
-                                                                          to]
-                                                                alt-dist))
+                              (assoc-in [:queue
+                                         to]
+                                        alt-dist)
                               (assoc-in [:paths to] alt-path)))]
     (loop [state {:paths paths
                   :queue (assoc (if use-priority-map?
@@ -83,9 +83,7 @@
             state (update state :seen conj from)
             state (->> from
                        successor-fn
-                       #_(remove (fn [n]
-                                   (println (:to n) (:seen state))
-                                   ((:seen state) (:to n))))
+                       (remove (comp (:seen state) :to))
                        (reduce (partial maybe-swap
                                         update-state-fn
                                         (fn [state n]
@@ -95,7 +93,6 @@
                                         dist-fn
                                         false)
                                (update state :queue pop)))]
-        (println "curr" from)
         (if (-> state
                 :queue
                 empty?)
@@ -169,7 +166,6 @@
                        (igraph/add g))]
     (reduce
      (fn [paths source]
-       (println "source" source)
        (assoc paths source (shortest-path g source successor-fn dist-fn)))
      {}
      V)))

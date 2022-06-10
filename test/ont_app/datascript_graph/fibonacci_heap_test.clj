@@ -88,18 +88,18 @@
                (dissoc 2)
                peek
                key)))
-    #_(is (= 3
-             (-> h
-                 (dissoc 2)
-                 (dissoc 1)
-                 peek
-                 key)))
-    #_(is (= 3
-             (-> h
-                 (dissoc 1)
-                 (dissoc 2)
-                 peek
-                 key)))))
+    (is (= 3
+           (-> h
+               (dissoc 2)
+               (dissoc 1)
+               peek
+               key)))
+    (is (= 3
+           (-> h
+               (dissoc 1)
+               (dissoc 2)
+               peek
+               key)))))
 
 (deftest decrease-priority-test
   (let [h (sut/make-heap)]
@@ -142,55 +142,58 @@
                peek
                key)))))
 
+
 (deftest heap-test
-  (let [h  (-> (sut/make-heap)
-               (assoc "foo" 50)
-               (assoc "bar" 50)
-               (assoc "baz" 75))
-        n1 "foo"
-        n2 "bar"
-        n3 "baz"]
-    (is (not (empty? h)))
-    (is (= (sut/node-get n1 (.m h) :priority) 50))
-    #_(is (= (node-val n1) "foo"))
-    #_(is (= (node->entry n1) [50 "foo"]))
-    (is (= 3 (count h)))
-    (is (= ["foo" "bar" "baz"] (seq h)))
-    (let [h (dissoc h n2)]
-      (is (= (count h) 2))
-      (is (= ["foo" "baz"] (seq h)))
-      (let [n-elems 5
-            c       [1 0 4 3 2]
-            #_c
-            #_(->> c
-                   n-elems
-                   range
-                   shuffle
-                   ((fn [c] (println "shuffled" c) c)))
-            h       (reduce (fn [h v] (assoc h v v)) h c)
-            #_(doseq [i (shuffle (range 100))]
-                (add! h [i] i))]
-        (is (= (count h) (+ 2 n-elems)))
-        (let [removed 1
-              h       (-> [h i]
-                          (fn (println i) (is (= (peek h) [i i])) (pop h))
-                          (reduce h (range removed)))
-              #_#_h (assoc h n3 1)]
-          #_(decrease-key! h n3 [1] "boo")
-          #_(is (= (- (+ n-elems 2) removed) (count h)))
-          #_(is (= (peek h) [n3 #_"boo" 1]))
-          #_(let [h (-> h
-                        (dissoc h n1)
-                        (dissoc h n3))
-                  h (reduce (fn [h i]
-                              (let [i (+ 50 i)]
-                                (is (= [i i] (peek h)))
-                                (pop h)))
-                            h
-                            (range 50))]
+  (binding [sut/debug true]
+    (let [h  (-> (sut/make-heap)
+                 (assoc "foo" 50)
+                 (assoc "bar" 50)
+                 (assoc "baz" 75))
+          n1 "foo"
+          n2 "bar"
+          n3 "baz"]
+      (is (seq h))
+      (is (= (sut/node-get n1 (.m h) :priority) 50))
+      #_(is (= (node-val n1) "foo"))
+      #_(is (= (node->entry n1) [50 "foo"]))
+      (is (= 3 (count h)))
+      (is (= ["foo" "bar" "baz"] (seq h)))
+      (let [h (dissoc h n2)]
+        (is (= (count h) 2))
+        (is (= ["foo" "baz"] (seq h)))
+        (let [n-elems 100
+              c       (->> n-elems
+                           range
+                           shuffle
+                           #_((fn [c] (println "shuffled" c) c)))
+              h       (reduce (fn [h v] (assoc h v v)) h c)]
+          (is (= (+ 2 n-elems) (count h)))
+          (let [removed (min 50 n-elems)
+                h       (->> removed
+                             range
+                             (reduce (fn [h i]
+                                       (is (= [i i] (peek h)))
+                                       (is (= (- (+ 2 n-elems) i) (count h)))
+                                       (pop h))
+                                     h))
+                h       (assoc h n3 1)
+                #_(decrease-key! h n3 [1] "boo")]
+            (is (= (- (+ n-elems 2) removed) (count h)))
+            (is (= (peek h) [n3 #_"boo" 1]))
+            (let [h       (-> h
+                              (dissoc n1)
+                              (dissoc n3))
+                  removed (- n-elems removed)
+                  h       (->> removed
+                               range
+                               (reduce (fn [h i]
+                                         (let [i (+ 50 i)]
+                                           (is (= [i i] (peek h)))
+                                           (pop h)))
+                                       h))]
               #_(dotimes [i 50]
                   (let [i (+ 50 i)]
                     (is (= (peek-min h) [[i] i]))
                     (is (= (remove-min! h) [[i] i]))))
               (is (= (count h) 0))
-              (is (empty? h))))))))
+              (is (empty? h)))))))))

@@ -278,69 +278,69 @@
                (->> (path-info g source)))))))
 
 (deftest johnson-all-pairs-shortest-path
-  #_(let [g (-> {:weight {:db/type :db.type/integer}}
-                (dsg/make-graph)
-                (igraph/add (sut/complex-triples [[:a
-                                                   :to
-                                                   {:b {:weight 2}}
-                                                   :to
-                                                   {:b {:weight 1}
-                                                    :c {:weight 1}
-                                                    :d {:weight 1}}]
-                                                  [:b
-                                                   :to
-                                                   {:e {:weight 2}}]])))]
-      (is (= {:a {:a {:dist  0
-                      :nodes [:a]}
-                  :b {:dist  1
-                      :nodes [:a :b]}
-                  :c {:dist  1
-                      :nodes [:a :c]}
-                  :d {:dist  1
-                      :nodes [:a :d]}
-                  :e {:dist  3
-                      :nodes [:a :b :e]}}
-              :b {:b {:dist  0
-                      :nodes [:b]}
-                  :e {:dist  2
-                      :nodes [:b :e]}}
-              :c {:c {:dist  0
-                      :nodes [:c]}}
-              :d {:d {:dist  0
-                      :nodes [:d]}}
-              :e {:e {:dist  0
-                      :nodes [:e]}}}
-             (-> g
-                 (sut/johnson-all-pairs-shortest-paths min-weight-successors
+  (let [g (-> {:weight {:db/type :db.type/integer}}
+              (dsg/make-graph)
+              (igraph/add (sut/complex-triples [[:a
+                                                 :to
+                                                 {:b {:weight 2}}
+                                                 :to
+                                                 {:b {:weight 1}
+                                                  :c {:weight 1}
+                                                  :d {:weight 1}}]
+                                                [:b
+                                                 :to
+                                                 {:e {:weight 2}}]])))]
+    (is (= {:a {:a {:dist  0
+                    :nodes [:a]}
+                :b {:dist  1
+                    :nodes [:a :b]}
+                :c {:dist  1
+                    :nodes [:a :c]}
+                :d {:dist  1
+                    :nodes [:a :d]}
+                :e {:dist  3
+                    :nodes [:a :b :e]}}
+            :b {:b {:dist  0
+                    :nodes [:b]}
+                :e {:dist  2
+                    :nodes [:b :e]}}
+            :c {:c {:dist  0
+                    :nodes [:c]}}
+            :d {:d {:dist  0
+                    :nodes [:d]}}
+            :e {:e {:dist  0
+                    :nodes [:e]}}}
+           (-> g
+               (sut/johnson-all-pairs-shortest-paths min-weight-successors
+                                                     calc-edge-dist
+                                                     :weight)
+               (->> (map (juxt key
+                               #(update-vals (val %)
+                                             (partial path-info g (key %)))))
+                    (into {}))))))
+  (testing "Detect negative cycles"
+   (let [g (-> {:weight {:db/type :db.type/integer}}
+               (dsg/make-graph)
+               (igraph/add (sut/complex-triples [[:a
+                                                  :to
+                                                  {:b {:weight 2}}
+                                                  :to
+                                                  {:b {:weight 1}
+                                                   :c {:weight 1}
+                                                   :d {:weight 1}}]
+                                                 [:b
+                                                  :to
+                                                  {:e {:weight 2}
+                                                   :c {:weight -2}}]
+                                                 [:c
+                                                  :to
+                                                  {:a {:weight -2}}]])))]
+     (is (= "Negative weight cycle"
+            (try (sut/johnson-all-pairs-shortest-paths g
+                                                       min-weight-successors
                                                        calc-edge-dist
                                                        :weight)
-                 (->> (map (juxt key
-                                 #(update-vals (val %)
-                                               (partial path-info g (key %)))))
-                      (into {}))))))
-  #_(testing "Detect negative cycles"
-     (let [g (-> {:weight {:db/type :db.type/integer}}
-                 (dsg/make-graph)
-                 (igraph/add (sut/complex-triples [[:a
-                                                    :to
-                                                    {:b {:weight 2}}
-                                                    :to
-                                                    {:b {:weight 1}
-                                                     :c {:weight 1}
-                                                     :d {:weight 1}}]
-                                                   [:b
-                                                    :to
-                                                    {:e {:weight 2}
-                                                     :c {:weight -2}}]
-                                                   [:c
-                                                    :to
-                                                    {:a {:weight -2}}]])))]
-       (is (= "Negative weight cycle"
-              (try (sut/johnson-all-pairs-shortest-paths g
-                                                         min-weight-successors
-                                                         calc-edge-dist
-                                                         :weight)
-                   (catch clojure.lang.ExceptionInfo e (ex-message e)))))))
+                 (catch clojure.lang.ExceptionInfo e (ex-message e)))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
   (let [g      (-> {:weight {:db/type :db.type/integer}}
                    (dsg/make-graph)

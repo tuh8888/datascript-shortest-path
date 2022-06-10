@@ -26,38 +26,6 @@
                        :min min-node}))
       (cmp p1 p2))))
 
-(defn cut
-  [m node other-node min-node]
-  (let [m (-> m
-              (assoc-in [(node-get other-node m :left) :right]
-                        (node-get other-node m :right))
-              (assoc-in [(node-get other-node m :left) :left]
-                        (node-get other-node m :left))
-              (update-in [node :degree] dec))
-        m (if (= (node-get node m :degree) 0)
-            (assoc-in m [node :child] nil)
-            (if (= (:child node) other-node)
-              (assoc-in m [node :child] (node-get other-node m :right))
-              m))]
-    (-> m
-        (assoc-in [other-node :right] min-node)
-        (assoc-in [other-node :left] (node-get min-node m :left))
-        (assoc-in [min-node :left] other-node)
-        (assoc-in [(node-get other-node m :left) :right] other-node)
-        (assoc-in [other-node :parent] nil)
-        (assoc-in [other-node :mark] false))))
-
-(defn cascading-cut
-  [m node min-node]
-  (let [z (node-get node m :parent)]
-    (if (nil? z)
-      m
-      (if (node-get node m :mark)
-        (-> m
-            (cut z node min-node)
-            (cascading-cut z min-node))
-        (assoc-in m [node :mark] true)))))
-
 (defn check-node
   [m k]
   (let [vs {:child :parent
@@ -76,17 +44,53 @@
                    :rev-k     rev-k
                    :rev-rev-k rev-rev-k}))))))
 
+(def ^:dynamic debug false)
+
 (defn check-nodes
   [h]
-  (if (instance? FibonacciHeap h)
-    (let [m (.m h)]
-      (doseq [[k _] m]
-        (check-node m k))
-      h)
-    (let [m h]
-      (doseq [[k _] h]
-        (check-node h k))
-      m)))
+  (if debug
+    (if (instance? FibonacciHeap h)
+      (let [m (.m h)]
+        (doseq [[k _] m]
+          (check-node m k))
+        h)
+      (let [m h]
+        (doseq [[k _] h]
+          (check-node h k))
+        m))
+    h))
+
+(defn cut
+  [m node x min-node]
+  (let [m (-> m
+              (check-nodes)
+              (assoc-in [(node-get x m :left) :right] (node-get x m :right))
+              (assoc-in [(node-get x m :right) :left] (node-get x m :left))
+              (update-in [node :degree] dec))
+        m (if (zero? (node-get node m :degree))
+            (assoc-in m [node :child] nil)
+            (cond-> m
+              (= (:child node) x) (assoc-in [node :child]
+                                   (node-get x m :right))))]
+    (-> m
+        (assoc-in [x :right] min-node)
+        (assoc-in [x :left] (node-get min-node m :left))
+        (assoc-in [min-node :left] x)
+        ((fn [m] (assoc-in m [(node-get x m :left) :right] x)))
+        (assoc-in [x :parent] nil)
+        (check-nodes)
+        (assoc-in [x :mark] false))))
+
+(defn cascading-cut
+  [m node min-node]
+  (let [z (node-get node m :parent)]
+    (if (nil? z)
+      m
+      (if (node-get node m :mark)
+        (-> m
+            (cut z node min-node)
+            (cascading-cut z min-node))
+        (assoc-in m [node :mark] true)))))
 
 (defn connect-nodes
   [m left right]
@@ -98,51 +102,24 @@
   [m k parent]
   (let [m (-> m
               (check-nodes)
-              ((fn [m]
-                 (connect-nodes m (node-get k m :left) (node-get k m :right))))
-              #_(assoc-in [(node-get node m :left) :right]
-                          (node-get node m :right))
-              #_(assoc-in [(node-get node m :right) :left]
-                          (node-get node m :left))
+              (connect-nodes (node-get k m :left) (node-get k m :right))
               (assoc-in [k :parent] parent))
         m (if (node-get parent m :child)
             (-> m
-                ((fn [m] (connect-nodes m k (node-get parent m :child))))
-                ((fn [m]
-                   (connect-nodes m
-                                  (-> parent
-                                      (node-get m :child)
-                                      (node-get m :right))
-                                  k)))
-                (check-nodes)
-                #_(assoc-in [k :left] (node-get parent m :child))
-                #_(assoc-in [k :right]
-                            (-> parent
-                                (node-get m :child)
-                                (node-get m :right)))
-                #_(assoc-in [(node-get parent m :child) :right] k)
-                #_(assoc-in [(node-get k m :right) :left] k))
+                (connect-nodes (node-get parent m :child) k)
+                (assoc-in [k :right]
+                          (-> parent
+                              (node-get m :child)
+                              (node-get m :right)))
+                ((fn [m] (assoc-in m [(node-get k m :right) :left] k)))
+                (check-nodes))
             (-> m
                 (assoc-in [parent :child] k)
                 (connect-nodes k k)
-                (check-nodes)
-                #_(assoc-in [k :right] k)
-                #_(assoc-in [k :left] k)))]
+                (check-nodes)))]
     (-> m
         (update-in [parent :degree] inc)
         (assoc-in [k :mark] false))))
-
-#_(defn add-to-list
-    [this l]
-    (loop [cur this
-           l   l]
-      this
-      (let [l   (conj l cur)
-            l   (if (not (nil? (:child cur))) (add-to-list @(:child cur) l) l)
-            cur @(:right cur)]
-        (if (= this cur) l (recur cur l)))))
-
-
 
 (defprotocol Heap
   #_(consolidate [h])
@@ -169,13 +146,6 @@
                          x      w
                          next-w (node-get w m :right)
                          d      (node-get x m :degree)]
-                    #_(when (some nil? [start w x next-w])
-                        (throw (ex-info ""
-                                        {:start  start
-                                         :w      w
-                                         :x      x
-                                         :next-w next-w
-                                         :min    min-node})))
                     (if-let [y (get A d)]
                       (let [[x y]  (if (not
                                         (compare-priorities min-node m cmp x y))
@@ -189,7 +159,7 @@
                         (recur m (assoc A d nil) start x next-w (inc d)))
                       [m A start x next-w d]))
                   A (assoc A d x)]
-              (if (not= w start) (recur m A start w) [m A start])))
+              (if (= w start) [m A start] (recur m A start w))))
           new-min (->> A
                        vals
                        (remove nil?)
@@ -217,7 +187,9 @@
                                   (compare-priorities min-node m cmp k y)))
                        (-> m
                            (cut y k min-node)
-                           (cascading-cut y min-node))
+                           (check-nodes)
+                           (cascading-cut y min-node)
+                           (check-nodes))
                        m)
             min-node (if (or delete?
                              (compare-priorities min-node m cmp k min-node))
@@ -268,10 +240,10 @@
   IPersistentStack
     (peek [_] (MapEntry. min-node (node-get min-node m :priority)))
     (pop [this]
-      (check-nodes this)
       (-> this
+          (check-nodes)
           (remove-min min-node cmp m)
-          #_(check-nodes)))
+          (check-nodes)))
   IReduce
     (reduce [this f]
       (let [val (peek this)]
@@ -299,60 +271,60 @@
                        :k k
                        :m m})))
     (let [seen (conj seen x)]
-      (if (or (= x (node-get k m :child)) #_(= x k))
+      (if (= x (node-get k m :child))
         m
         (let [m (assoc-in m [x :parent] nil)]
           (recur seen m (node-get x m :right)))))))
 
 (defn remove-min
   [this min-node cmp m]
-  (if min-node
-    (let [z-right (node-get min-node m :right)
-          m
-          (-> m
-              (cond->
-                (node-get min-node m :child) (-> (assoc-in [(node-get min-node
-                                                                      m
-                                                                      :child)
-                                                            :parent]
-                                                           nil)
-                                                 (remove-parents min-node)
-                                                 (connect-nodes
-                                                  min-node
-                                                  (-> min-node
-                                                      (node-get m :child)
-                                                      (node-get m :left)))
-                                                 (connect-nodes
-                                                  (node-get min-node m :child)
-                                                  (node-get min-node m :left))))
-              (check-nodes)
-              ((fn [m]
-                 (connect-nodes m
-                                (node-get min-node m :left)
-                                (node-get min-node m :right))))
-              (dissoc min-node)
-              (check-nodes)
-              #_(assoc-in [(node-get min-node m :left) :right]
-                          (node-get min-node m :right))
-              #_(assoc-in [(node-get min-node m :right) :left]
-                          (node-get min-node m :left)))]
-      (if (= min-node z-right)
-        (FibonacciHeap. nil cmp m)
-        (let [new-this   (-> z-right
-                             (FibonacciHeap. cmp m)
-                             (check-nodes)
-                             consolidate
-                             (check-nodes))
-              newer-this (FibonacciHeap. (.min-node new-this)
-                                         (.cmp new-this)
-                                         m)]
-          #_(assert (contains? (.m newer-this) (.min-node newer-this))
-                    {:min     (.min-node newer-this)
-                     :old-min min-node
-                     :right   (node-get min-node m :right)
-                     :m       (.m newer-this)})
-          newer-this)))
-    this))
+  #dbg
+   ^{:break/when (= 38 min-node)}
+   (if min-node
+     (let [m (-> m
+                 (cond-> (node-get min-node m :child)
+                         (->
+                           (assoc-in [(node-get min-node m :child) :parent] nil)
+                           (remove-parents min-node)
+                           (check-nodes)
+                           ((fn [m]
+                              (let [min-left     (node-get min-node m :left)
+                                    z-child-left (-> min-node
+                                                     (node-get m :child)
+                                                     (node-get m :left))]
+                                (-> m
+                                    (assoc-in [min-node :left] z-child-left)
+                                    (assoc-in [z-child-left :right] min-node)
+                                    (assoc-in [(-> min-node
+                                                   (node-get m :child))
+                                               :left]
+                                              min-left)
+                                    (assoc-in [min-left :right]
+                                              (node-get min-node m :child))))))
+                           #_(connect-nodes (-> min-node
+                                                (node-get m :child)
+                                                (node-get m :left))
+                                            min-node)
+                           #_(connect-nodes (node-get min-node m :left)
+                                            (node-get min-node m :child))
+                           (check-nodes)))
+                 (check-nodes)
+                 ((fn [m]
+                    (connect-nodes m
+                                   (node-get min-node m :left)
+                                   (node-get min-node m :right)))))
+           z-right (node-get min-node m :right)
+           m (-> m
+                 (dissoc min-node)
+                 (check-nodes))]
+       (if (= min-node z-right)
+         (FibonacciHeap. nil cmp m)
+         (-> z-right
+             (FibonacciHeap. cmp m)
+             (check-nodes)
+             consolidate
+             (check-nodes))))
+     this))
 
 (defmethod print-method FibonacciHeap [o w] (print-method (seq o) w))
 
