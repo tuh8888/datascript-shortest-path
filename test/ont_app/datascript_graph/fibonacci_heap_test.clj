@@ -153,7 +153,7 @@
           n2 "bar"
           n3 "baz"]
       (is (seq h))
-      (is (= (sut/node-get n1 (.m h) :priority) 50))
+      (is (= (sut/node-get n1 (.nodes h) :priority) 50))
       (is (= 3 (count h)))
       (is (= ["foo" "bar" "baz"] (seq h)))
       (let [h (dissoc h n2)]
