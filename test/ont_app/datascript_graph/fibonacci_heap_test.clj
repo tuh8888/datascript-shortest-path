@@ -144,14 +144,14 @@
 
 
 (deftest heap-test
-  (binding [sut/debug true]
-    (let [h  (-> (sut/make-heap)
-                 (assoc "foo" 50)
-                 (assoc "bar" 50)
-                 (assoc "baz" 75))
-          n1 "foo"
+  (binding [sut/debug false]
+    (let [n1 "foo"
           n2 "bar"
-          n3 "baz"]
+          n3 "baz"
+          h  (-> (sut/make-heap)
+                 (assoc n1 50)
+                 (assoc n2 50)
+                 (assoc n3 75))]
       (is (seq h))
       (is (= (sut/node-get n1 (.nodes h) :priority) 50))
       (is (= 3 (count h)))
@@ -160,7 +160,8 @@
         (is (= (count h) 2))
         (is (= ["foo" "baz"] (seq h)))
         (doseq [rep (range 10)]
-          (let [n-elems 100
+          (let [n-elems 1000
+                #_10000
                 #_#_c
                   [35 77 52 70 5 16 97 47 65 45 36 90 71 92 30 22 25 58 3 4 64
                    42 37 83 23 13 85 84 28 62 87 20 74 78 88 73 46 79 53 24 81
