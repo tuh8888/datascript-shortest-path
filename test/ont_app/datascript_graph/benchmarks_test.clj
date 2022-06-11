@@ -103,11 +103,12 @@
              Comparator
                (compare [_ e1 e2]
                  (- (element->priority e1) (element->priority e2)))))
-         #_#_:priority-map (pm/priority-map)
+         :priority-map
+         (pm/priority-map)
          :fibonacci-heap
          (my-fh/make-heap)
-         #_#_:priority-queue-fifo
-           (sh/priority-queue element->priority :variant :queue)
+         :priority-queue-fifo
+         (sh/priority-queue element->priority :variant :queue)
          #_#_:priority-queue-random
            (sh/priority-queue element->priority :variant :set))))
     (println "------------------------------------------------------")))
