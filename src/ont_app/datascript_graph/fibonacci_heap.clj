@@ -18,16 +18,6 @@
 
 (defn node-get [k m prop] (get-in m [k prop]))
 
-(defn p<
-  [nodes cmp n1 n2]
-  (let [p1 (node-get n1 nodes :priority)
-        p2 (node-get n2 nodes :priority)]
-    (if (some nil? [p1 p2])
-      (throw (ex-info ""
-                      {:n1 n1
-                       :n2 n2
-                       :m  nodes}))
-      (cmp p1 p2))))
 
 (def ^:dynamic debug false)
 
@@ -59,6 +49,7 @@
   (check-nodes [this]))
 
 (defprotocol Heap
+  (p< [h k1 k2])
   (link [h k parent])
   (cut [h k parent])
   (cascading-cut [h parent])
@@ -81,12 +72,21 @@
     (check-nodes [this]
       (when debug
         (assert (or (and (nil? min-k) (empty? nodes)) (contains? nodes min-k))
-                {:min min-k
-                 :m   (into {} nodes)})
+                {:min   min-k
+                 :nodes (into {} nodes)})
         (doseq [[k _] nodes]
           (check-node nodes k)))
       this)
   Heap
+    (p< [_ k1 k2]
+      (let [p1 (node-get k1 nodes :priority)
+            p2 (node-get k2 nodes :priority)]
+        (if (some nil? [p1 p2])
+          (throw (ex-info ""
+                          {:n1    k1
+                           :n2    k2
+                           :nodes nodes}))
+          (cmp p1 p2))))
     (cascading-cut [this k]
       (let [parent (node-get k nodes :parent)]
         (if (nil? parent)
@@ -110,7 +110,14 @@
                                (assoc nodes k))
             roots         (conj (or roots #{}) k)
             [min-k nodes] (if min-k
-                            (let [min-k (if (p< nodes cmp k min-k) k min-k)]
+                            (let [min-k (if (p< (FibonacciHeap. min-k
+                                                                cmp
+                                                                roots
+                                                                nodes)
+                                                k
+                                                min-k)
+                                          k
+                                          min-k)]
                               [min-k nodes])
                             [k nodes])]
         (-> min-k
@@ -147,7 +154,13 @@
                                       (node-get nodes :children)
                                       count)]
                       (if-let [y (get A d)]
-                        (let [[k parent]  (if (not (p< nodes cmp x y))
+                        (let [[k parent]  (if
+                                            (not (p< (FibonacciHeap. min-k
+                                                                     cmp
+                                                                     roots
+                                                                     nodes)
+                                                     x
+                                                     y))
                                             [y x]
                                             [x y])
                               [next-w ws] (if (= parent next-w)
@@ -175,11 +188,14 @@
                     A (assoc A d x)]
                 (if (empty? ws) [roots nodes A] (recur roots nodes A ws))))
             nodes (check-nodes nodes)
-            new-min (->> A
-                         vals
-                         (remove nil?)
-                         (reduce (fn [x a] (if (p< nodes cmp a x) a x))
-                                 (first roots)))]
+            new-min
+            (->> A
+                 vals
+                 (remove nil?)
+                 (reduce
+                  (fn [x a]
+                    (if (p< (FibonacciHeap. min-k cmp roots nodes) a x) a x))
+                  (first roots)))]
         (FibonacciHeap. new-min cmp roots nodes)))
     (remove-min [this]
       (if min-k
@@ -214,8 +230,7 @@
             this   (-> nodes
                        (assoc-in [k :priority] priority)
                        (->> (FibonacciHeap. min-k cmp roots))
-                       (cond-pred-> (->> (.nodes)
-                                         (#(p< % cmp k parent))
+                       (cond-pred-> (->> (#(p< % k parent))
                                          (or delete?)
                                          (and parent))
                                     (-> (cut parent k)
@@ -225,7 +240,10 @@
             nodes  (.nodes this)
             roots  (.roots this)
             min-k  (.min-k this)
-            min-k  (if (or delete? (p< nodes cmp k min-k)) k min-k)]
+            min-k  (if (or delete?
+                           (p< (FibonacciHeap. min-k cmp roots nodes) k min-k))
+                     k
+                     min-k)]
         (-> min-k
             (FibonacciHeap. cmp roots nodes)
             (check-nodes))))
@@ -235,8 +253,8 @@
     (count [_] (count nodes))
     (assoc [this k priority]
       (assert (or (nil? min-k) (contains? nodes min-k))
-              {:min min-k
-               :m   nodes})
+              {:min   min-k
+               :nodes nodes})
       (check-nodes this)
       (if (contains? nodes k)
         (decrease-priority this k priority)
