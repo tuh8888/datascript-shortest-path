@@ -59,6 +59,7 @@
   (check-nodes [this]))
 
 (defprotocol Heap
+  (link [h k parent])
   (cut [h k parent])
   (cascading-cut [h parent])
   (insert [h k priority])
@@ -74,8 +75,6 @@
        (doseq [[k _] nodes]
          (check-node nodes k)))
      nodes))
-
-(declare my-consolidate)
 
 (deftype FibonacciHeap [min-k cmp roots nodes]
   Checked
@@ -117,7 +116,71 @@
         (-> min-k
             (FibonacciHeap. cmp roots nodes)
             (check-nodes))))
-    (consolidate [_] (my-consolidate roots nodes cmp))
+    (link [_ parent k]
+      (let [curr-parent (node-get k nodes :parent)
+            nodes       (-> nodes
+                            (cond-> curr-parent (update-in [curr-parent
+                                                            :children]
+                                                           disj
+                                                           k))
+                            (assoc-in [k :parent] parent)
+                            (update-in [parent :children] (fnil conj #{}) k)
+                            (assoc-in [k :mark] false))
+            roots       (disj roots k)]
+        (FibonacciHeap. min-k cmp roots nodes)))
+    (consolidate [_]
+      (let [[roots nodes A]
+            (loop [roots roots
+                   nodes nodes
+                   A     {}
+                   ws    roots]
+              (let [w (first ws)
+                    ws (disj ws w)
+                    [roots nodes A x ws d]
+                    (loop [roots  roots
+                           nodes  nodes
+                           A      A
+                           x      w
+                           ws     ws
+                           next-w w
+                           d      (-> x
+                                      (node-get nodes :children)
+                                      count)]
+                      (if-let [y (get A d)]
+                        (let [[k parent]  (if (not (p< nodes cmp x y))
+                                            [y x]
+                                            [x y])
+                              [next-w ws] (if (= parent next-w)
+                                            [(first ws) (disj ws x)]
+                                            [next-w ws])
+                              this        (-> min-k
+                                              (FibonacciHeap. cmp roots nodes)
+                                              (link k parent)
+                                              ((fn [this]
+                                                 (try
+                                                   (check-nodes this)
+                                                   (catch AssertionError e
+                                                     (throw
+                                                      (ex-info
+                                                       (ex-message e)
+                                                       (assoc (ex-data e)
+                                                              :same-degree-roots
+                                                              [k parent]))))))))
+                              roots       (.roots this)
+                              nodes       (.nodes this)
+                              A           (assoc A d nil)
+                              d           (inc d)]
+                          (recur roots nodes A k ws next-w d))
+                        [roots nodes A x ws d]))
+                    A (assoc A d x)]
+                (if (empty? ws) [roots nodes A] (recur roots nodes A ws))))
+            nodes (check-nodes nodes)
+            new-min (->> A
+                         vals
+                         (remove nil?)
+                         (reduce (fn [x a] (if (p< nodes cmp a x) a x))
+                                 (first roots)))]
+        (FibonacciHeap. new-min cmp roots nodes)))
     (remove-min [this]
       (if min-k
         (let [children    (node-get min-k nodes :children)
@@ -218,71 +281,7 @@
               (if (reduced? ret) @ret (recur ret))))))))
 
 
-(defn link
-  [roots nodes parent k]
-  (let [curr-parent (node-get k nodes :parent)
-        nodes       (-> nodes
-                        (cond-> curr-parent (update-in [curr-parent :children]
-                                                       disj
-                                                       k))
-                        (assoc-in [k :parent] parent)
-                        (update-in [parent :children] (fnil conj #{}) k)
-                        (assoc-in [k :mark] false))
-        roots       (disj roots k)]
-    [roots nodes]))
 
-(defn my-consolidate
-  [roots nodes cmp]
-  (let [[roots nodes A]
-        (loop [roots roots
-               nodes nodes
-               A     {}
-               ws    roots]
-          (let [w (first ws)
-                ws (disj ws w)
-                [roots nodes A x ws d]
-                (loop [roots  roots
-                       nodes  nodes
-                       A      A
-                       x      w
-                       ws     ws
-                       next-w w
-                       d      (-> x
-                                  (node-get nodes :children)
-                                  count)]
-                  (if-let [y (get A d)]
-                    (let [[k parent]    (if (not (p< nodes cmp x y))
-                                          [y x]
-                                          [x y])
-                          [next-w ws]   (if (= parent next-w)
-                                          [(first ws) (disj ws x)]
-                                          [next-w ws])
-                          [roots nodes] (->
-                                          roots
-                                          (link nodes k parent)
-                                          ((fn [[roots nodes]]
-                                             (try (check-nodes nodes)
-                                                  [roots nodes]
-                                                  (catch AssertionError e
-                                                    (throw
-                                                     (ex-info
-                                                      (ex-message e)
-                                                      (assoc (ex-data e)
-                                                             :same-degree-roots
-                                                             [k parent]))))))))
-                          A             (assoc A d nil)
-                          d             (inc d)]
-                      (recur roots nodes A k ws next-w d))
-                    [roots nodes A x ws d]))
-                A (assoc A d x)]
-            (if (empty? ws) [roots nodes A] (recur roots nodes A ws))))
-        nodes (check-nodes nodes)
-        new-min (->> A
-                     vals
-                     (remove nil?)
-                     (reduce (fn [x a] (if (p< nodes cmp a x) a x))
-                             (first roots)))]
-    (FibonacciHeap. new-min cmp roots nodes)))
 
 (defmethod print-method FibonacciHeap [o w] (print-method (seq o) w))
 
