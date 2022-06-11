@@ -8,13 +8,12 @@
                          IReduce
                          MapEntry)))
 
-(defrecord Node [priority parent children degree mark])
+(defrecord Node [priority parent children mark])
 
 (defn make-node
   [priority]
   (map->Node {:priority priority
               :mark     false
-              :degree   0
               :children #{}}))
 
 (defn node-get [k m prop] (get-in m [k prop]))
@@ -101,7 +100,6 @@
     (cut [_ parent k]
       (let [nodes (-> nodes
                       (check-nodes)
-                      (update-in [parent :degree] dec)
                       (update-in [parent :children] disj k)
                       (assoc-in [k :parent] nil)
                       (assoc-in [k :mark] false))
@@ -229,7 +227,6 @@
                                                        k))
                         (assoc-in [k :parent] parent)
                         (update-in [parent :children] (fnil conj #{}) k)
-                        (update-in [parent :degree] inc)
                         (assoc-in [k :mark] false))
         roots       (disj roots k)]
     [roots nodes]))
@@ -250,7 +247,9 @@
                        x      w
                        ws     ws
                        next-w w
-                       d      (node-get x nodes :degree)]
+                       d      (-> x
+                                  (node-get nodes :children)
+                                  count)]
                   (if-let [y (get A d)]
                     (let [[k parent]    (if (not (p< nodes cmp x y))
                                           [y x]
