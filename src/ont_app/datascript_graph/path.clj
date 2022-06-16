@@ -1,49 +1,16 @@
 (ns ont-app.datascript-graph.path
   (:require
-   [clojure.data.priority-map :as pm]
-   [datascript.core :as d]
-   [ont-app.datascript-graph.core :as dsg]
+   [clojure.data.priority-map     :as pm]
+   [mops.datascript-mops          :as dm]
    [ont-app.datascript-graph.fibonacci-heap :as fh]
    [ont-app.datascript-graph.util :refer [cond-pred->]]
-   [ont-app.igraph.core :as igraph]))
-
-(def graph-rules
-  '[[(edge ?s ?p ?o ?e) [?e ::from ?s] [?e ::to ?o] [?e ::label ?p]]
-    [(node? ?x) (or [_ ::from ?x] [_ ::to ?x])]
-    [(edge? ?x) (or [?x ::from _] [?x ::to _] [?x ::label _])]])
-
-(defn nodes
-  [{:keys [db]}]
-  (d/q '{:find  [[?id ...]]
-         :in    [$ %]
-         :where [(node? ?node) [?node ::dsg/id ?id]]}
-       db
-       graph-rules))
+   [ont-app.igraph.core           :as igraph]))
 
 (defn edges
   [g successor-fn]
   (->> g
-       nodes
+       dm/get-mops
        (mapcat successor-fn)))
-
-(defn ->edge-ref
-  [subject predicate object]
-  (->> [subject object]
-       (map name)
-       (apply format "%s-%s-%s" (random-uuid))
-       (keyword (name predicate))))
-
-(defn complex-triples
-  [triples]
-  (->> (for [[s & p-os]       triples
-             [p object-attrs] (partition 2 p-os)
-             [o attrs]        object-attrs]
-         (let [e  (->edge-ref s p o)
-               ts [[e ::from s] [e ::to o] [e ::label p]]]
-           (->> attrs
-                (map (partial into [e]))
-                (into ts))))
-       (reduce into [])))
 
 (defn maybe-swap
   [update-state-fn path-fn dist-fn detect-neg? paths {:keys [from to e]}]
@@ -103,7 +70,7 @@
   [g paths successor-fn dist-fn & {:keys [skip-neg-detect?]}]
   (let [E (edges g successor-fn)
         n (-> g
-              nodes
+              dm/get-mops
               count)]
     (-> n
         (cond-> skip-neg-detect? dec)
@@ -140,13 +107,11 @@
 (defn johnson-all-pairs-shortest-paths
   "Finds the shortest paths between all pairs of nodes using Johnson's algorithm."
   [g successor-fn dist-fn w-label]
-  (let [V         (nodes g)
+  (let [V         (dm/get-mops g)
         re-weight (let [g  (->> V
                                 (reduce (fn [m to] (assoc m to {w-label 0})) {})
                                 (vector ::s :to)
-                                vector
-                                complex-triples
-                                (igraph/add g))
+                                (dm/add-mop g))
                         bf (shortest-path g
                                           ::s
                                           successor-fn

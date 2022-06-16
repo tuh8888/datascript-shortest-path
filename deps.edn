@@ -1,7 +1,6 @@
 ;;!zprint {:width 1000 :map {:sort? false}}
-{:deps    {datascript/datascript    {:mvn/version "1.3.13"}
-           ont-app/datascript-graph {:mvn/version "0.1.1"}
-           org.clojure/clojure      {:mvn/version "1.11.0"}}
+{:deps    {io.github.tuh8888/datascript-mops {:local/root "../datascript-mops"}
+           org.clojure/clojure               {:mvn/version "1.11.0"}}
  :aliases {:build {:deps       {io.github.seancorfield/build-clj {:deps/root "slim"
                                                                   :git/sha   "9b8e09b"
                                                                   :git/tag   "v0.6.3"}}

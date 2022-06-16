@@ -1,10 +1,10 @@
 (ns ont-app.datascript-graph.path-test
   (:require
-   [clojure.test        :refer [deftest is testing]]
-   [datascript.core     :as d]
+   [clojure.test         :refer [deftest is testing]]
+   [datascript.core      :as d]
    [ont-app.datascript-graph.core :as dsg]
    [ont-app.datascript-graph.path :as sut]
-   [ont-app.igraph.core :as igraph]))
+   [mops.datascript-mops :as dm]))
 
 (defn calc-edge-dist
   [g edges]
@@ -18,8 +18,8 @@
 (defn edges->node-path
   [g edges]
   (->> edges
-       (d/pull-many (:db g) [{::sut/to [::dsg/id]} :weight])
-       (map #(update % ::sut/to (comp ::dsg/id first)))))
+       (d/pull-many (:db g) [{::dm/to [::dsg/id]} :weight])
+       (map #(update % ::dm/to (comp ::dsg/id first)))))
 
 (defn path-info
   [g source path]
@@ -27,7 +27,7 @@
       (cond-> (not (string? path)) (assoc :dist  (calc-edge-dist g path)
                                           :nodes (->> path
                                                       (edges->node-path g)
-                                                      (map ::sut/to)
+                                                      (map ::dm/to)
                                                       (cons source)
                                                       vec)))))
 
@@ -41,34 +41,33 @@
                           a
                           b
                           db
-                          sut/graph-rules))]
-    (d/q '{:find  [?from-id ?to-id ?edge ?id]
-           :keys  [from to e id]
-           :in    [$ ?from min-weight %]
-           :where [(edge ?from _ ?to ?edge)
-                   [(min-weight $ ?from ?to) ?mdist]
-                   [?edge :weight ?mdist]
-                   [?edge ::dsg/id ?id]
-                   [?from ::dsg/id ?from-id]
-                   [?to ::dsg/id ?to-id]]}
-         (:db g)
-         [::dsg/id node]
-         min-weight
-         sut/graph-rules)))
+                          dm/graph-rules))]
+    (dm/query g
+              '{:find  [?from-id ?to-id ?edge ?id]
+                :keys  [from to e id]
+                :in    [?from min-weight]
+                :where [(edge ?from _ ?to ?edge)
+                        [(min-weight $ ?from ?to) ?mdist]
+                        [?edge :weight ?mdist]
+                        [?edge ::dsg/id ?id]
+                        [?from ::dsg/id ?from-id]
+                        [?to ::dsg/id ?to-id]]}
+              [::dsg/id node]
+              min-weight)))
 
 (deftest dijkstra-shortest-path-test
   (let [g (-> {:weight {:db/type :db.type/integer}}
-              (dsg/make-graph)
-              (igraph/add (sut/complex-triples [[:a
-                                                 :to
-                                                 {:b {:weight 2}}
-                                                 :to
-                                                 {:b {:weight 1}
-                                                  :c {:weight 1}
-                                                  :d {:weight 1}}]
-                                                [:b
-                                                 :to
-                                                 {:e {:weight 2}}]])))]
+              dm/make-mop-graph
+              (dm/add-mop [:a
+                           :to
+                           {:b {:weight 2}}
+                           :to
+                           {:b {:weight 1}
+                            :c {:weight 1}
+                            :d {:weight 1}}])
+              (dm/add-mop [:b
+                           :to
+                           {:e {:weight 2}}]))]
     (let [source :a]
       (is (= {:a {:dist  0
                   :nodes [:a]}
@@ -90,55 +89,55 @@
                  (sut/shortest-path source min-weight-successors calc-edge-dist)
                  (update-vals (partial path-info g source)))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
-  (let [g      (-> {:weight {:db/type :db.type/integer}}
-                   (dsg/make-graph)
-                   (igraph/add (sut/complex-triples [[:a
-                                                      :to
-                                                      {:c {:weight 3}
-                                                       :d {:weight 7}
-                                                       :e {:weight 5}}]
-                                                     [:c
-                                                      :to
-                                                      {:a {:weight 3}
-                                                       :f {:weight 7}
-                                                       :d {:weight 1}}]
-                                                     [:d
-                                                      :to
-                                                      {:a {:weight 7}
-                                                       :c {:weight 1}
-                                                       :f {:weight 2}
-                                                       :g {:weight 1}
-                                                       :h {:weight 3}
-                                                       :e {:weight 3}}]
-                                                     [:e
-                                                      :to
-                                                      {:a {:weight 5}
-                                                       :d {:weight 3}
-                                                       :h {:weight 2}}]
-                                                     [:f
-                                                      :to
-                                                      {:c {:weight 7}
-                                                       :d {:weight 2}
-                                                       :g {:weight 2}
-                                                       :i {:weight 1}}]
-                                                     [:g
-                                                      :to
-                                                      {:d {:weight 1}
-                                                       :f {:weight 2}
-                                                       :h {:weight 3}
-                                                       :i {:weight 3}
-                                                       :b {:weight 2}}]
-                                                     [:h
-                                                      :to
-                                                      {:d {:weight 3}
-                                                       :e {:weight 2}
-                                                       :g {:weight 3}
-                                                       :b {:weight 4}}]
-                                                     [:i
-                                                      :to
-                                                      {:f {:weight 1}
-                                                       :g {:weight 3}
-                                                       :b {:weight 5}}]])))
+  (let [g (-> (reduce dm/add-mop
+                      (dm/make-mop-graph {:weight {:db/type :db.type/integer}})
+                      [[:a
+                        :to
+                        {:c {:weight 3}
+                         :d {:weight 7}
+                         :e {:weight 5}}]
+                       [:c
+                        :to
+                        {:a {:weight 3}
+                         :f {:weight 7}
+                         :d {:weight 1}}]
+                       [:d
+                        :to
+                        {:a {:weight 7}
+                         :c {:weight 1}
+                         :f {:weight 2}
+                         :g {:weight 1}
+                         :h {:weight 3}
+                         :e {:weight 3}}]
+                       [:e
+                        :to
+                        {:a {:weight 5}
+                         :d {:weight 3}
+                         :h {:weight 2}}]
+                       [:f
+                        :to
+                        {:c {:weight 7}
+                         :d {:weight 2}
+                         :g {:weight 2}
+                         :i {:weight 1}}]
+                       [:g
+                        :to
+                        {:d {:weight 1}
+                         :f {:weight 2}
+                         :h {:weight 3}
+                         :i {:weight 3}
+                         :b {:weight 2}}]
+                       [:h
+                        :to
+                        {:d {:weight 3}
+                         :e {:weight 2}
+                         :g {:weight 3}
+                         :b {:weight 4}}]
+                       [:i
+                        :to
+                        {:f {:weight 1}
+                         :g {:weight 3}
+                         :b {:weight 5}}]]))
         source :a
         target :b]
     (is (= {:dist  7
@@ -150,17 +149,17 @@
 
 (deftest bellman-ford-shortest-path-test
   (let [g (-> {:weight {:db/type :db.type/integer}}
-              (dsg/make-graph)
-              (igraph/add (sut/complex-triples [[:a
-                                                 :to
-                                                 {:b {:weight 2}}
-                                                 :to
-                                                 {:b {:weight 1}
-                                                  :c {:weight 1}
-                                                  :d {:weight 1}}]
-                                                [:b
-                                                 :to
-                                                 {:e {:weight 2}}]])))]
+              dm/make-mop-graph
+              (dm/add-mop [:a
+                           :to
+                           {:b {:weight 2}}
+                           :to
+                           {:b {:weight 1}
+                            :c {:weight 1}
+                            :d {:weight 1}}])
+              (dm/add-mop [:b
+                           :to
+                           {:e {:weight 2}}]))]
     (let [source :a]
       (is (= {:a {:dist  0
                   :nodes [:a]}
@@ -191,21 +190,21 @@
                  (update-vals (partial path-info g source)))))))
   (testing "Detect negative cycles"
    (let [g (-> {:weight {:db/type :db.type/integer}}
-               (dsg/make-graph)
-               (igraph/add (sut/complex-triples [[:a
-                                                  :to
-                                                  {:b {:weight 2}}
-                                                  :to
-                                                  {:b {:weight 1}
-                                                   :c {:weight 1}
-                                                   :d {:weight 1}}]
-                                                 [:b
-                                                  :to
-                                                  {:e {:weight 2}
-                                                   :c {:weight -2}}]
-                                                 [:c
-                                                  :to
-                                                  {:a {:weight -2}}]])))]
+               dm/make-mop-graph
+               (dm/add-mop [:a
+                            :to
+                            {:b {:weight 2}}
+                            :to
+                            {:b {:weight 1}
+                             :c {:weight 1}
+                             :d {:weight 1}}])
+               (dm/add-mop [:b
+                            :to
+                            {:e {:weight 2}
+                             :c {:weight -2}}])
+               (dm/add-mop [:c
+                            :to
+                            {:a {:weight -2}}]))]
      (is (= "Negative weight cycle"
             (try (sut/shortest-path g
                                     :a
@@ -215,55 +214,55 @@
                                     true)
                  (catch clojure.lang.ExceptionInfo e (ex-message e)))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
-  (let [g      (-> {:weight {:db/type :db.type/integer}}
-                   (dsg/make-graph)
-                   (igraph/add (sut/complex-triples [[:a
-                                                      :to
-                                                      {:c {:weight 3}
-                                                       :d {:weight 7}
-                                                       :e {:weight 5}}]
-                                                     [:c
-                                                      :to
-                                                      {:a {:weight 3}
-                                                       :f {:weight 7}
-                                                       :d {:weight 1}}]
-                                                     [:d
-                                                      :to
-                                                      {:a {:weight 7}
-                                                       :c {:weight 1}
-                                                       :f {:weight 2}
-                                                       :g {:weight 1}
-                                                       :h {:weight 3}
-                                                       :e {:weight 3}}]
-                                                     [:e
-                                                      :to
-                                                      {:a {:weight 5}
-                                                       :d {:weight 3}
-                                                       :h {:weight 2}}]
-                                                     [:f
-                                                      :to
-                                                      {:c {:weight 7}
-                                                       :d {:weight 2}
-                                                       :g {:weight 2}
-                                                       :i {:weight 1}}]
-                                                     [:g
-                                                      :to
-                                                      {:d {:weight 1}
-                                                       :f {:weight 2}
-                                                       :h {:weight 3}
-                                                       :i {:weight 3}
-                                                       :b {:weight 2}}]
-                                                     [:h
-                                                      :to
-                                                      {:d {:weight 3}
-                                                       :e {:weight 2}
-                                                       :g {:weight 3}
-                                                       :b {:weight 4}}]
-                                                     [:i
-                                                      :to
-                                                      {:f {:weight 1}
-                                                       :g {:weight 3}
-                                                       :b {:weight 5}}]])))
+  (let [g      (reduce dm/add-mop
+                       (dm/make-mop-graph {:weight {:db/type :db.type/integer}})
+                       [[:a
+                         :to
+                         {:c {:weight 3}
+                          :d {:weight 7}
+                          :e {:weight 5}}]
+                        [:c
+                         :to
+                         {:a {:weight 3}
+                          :f {:weight 7}
+                          :d {:weight 1}}]
+                        [:d
+                         :to
+                         {:a {:weight 7}
+                          :c {:weight 1}
+                          :f {:weight 2}
+                          :g {:weight 1}
+                          :h {:weight 3}
+                          :e {:weight 3}}]
+                        [:e
+                         :to
+                         {:a {:weight 5}
+                          :d {:weight 3}
+                          :h {:weight 2}}]
+                        [:f
+                         :to
+                         {:c {:weight 7}
+                          :d {:weight 2}
+                          :g {:weight 2}
+                          :i {:weight 1}}]
+                        [:g
+                         :to
+                         {:d {:weight 1}
+                          :f {:weight 2}
+                          :h {:weight 3}
+                          :i {:weight 3}
+                          :b {:weight 2}}]
+                        [:h
+                         :to
+                         {:d {:weight 3}
+                          :e {:weight 2}
+                          :g {:weight 3}
+                          :b {:weight 4}}]
+                        [:i
+                         :to
+                         {:f {:weight 1}
+                          :g {:weight 3}
+                          :b {:weight 5}}]])
         source :a
         target :b]
     (is (= {:dist  7
@@ -279,17 +278,17 @@
 
 (deftest johnson-all-pairs-shortest-path
   (let [g (-> {:weight {:db/type :db.type/integer}}
-              (dsg/make-graph)
-              (igraph/add (sut/complex-triples [[:a
-                                                 :to
-                                                 {:b {:weight 2}}
-                                                 :to
-                                                 {:b {:weight 1}
-                                                  :c {:weight 1}
-                                                  :d {:weight 1}}]
-                                                [:b
-                                                 :to
-                                                 {:e {:weight 2}}]])))]
+              dm/make-mop-graph
+              (dm/add-mop [:a
+                           :to
+                           {:b {:weight 2}}
+                           :to
+                           {:b {:weight 1}
+                            :c {:weight 1}
+                            :d {:weight 1}}])
+              (dm/add-mop [:b
+                           :to
+                           {:e {:weight 2}}]))]
     (is (= {:a {:a {:dist  0
                     :nodes [:a]}
                 :b {:dist  1
@@ -320,21 +319,21 @@
                     (into {}))))))
   (testing "Detect negative cycles"
    (let [g (-> {:weight {:db/type :db.type/integer}}
-               (dsg/make-graph)
-               (igraph/add (sut/complex-triples [[:a
-                                                  :to
-                                                  {:b {:weight 2}}
-                                                  :to
-                                                  {:b {:weight 1}
-                                                   :c {:weight 1}
-                                                   :d {:weight 1}}]
-                                                 [:b
-                                                  :to
-                                                  {:e {:weight 2}
-                                                   :c {:weight -2}}]
-                                                 [:c
-                                                  :to
-                                                  {:a {:weight -2}}]])))]
+               dm/make-mop-graph
+               (dm/add-mop [:a
+                            :to
+                            {:b {:weight 2}}
+                            :to
+                            {:b {:weight 1}
+                             :c {:weight 1}
+                             :d {:weight 1}}])
+               (dm/add-mop [:b
+                            :to
+                            {:e {:weight 2}
+                             :c {:weight -2}}])
+               (dm/add-mop [:c
+                            :to
+                            {:a {:weight -2}}]))]
      (is (= "Negative weight cycle"
             (try (sut/johnson-all-pairs-shortest-paths g
                                                        min-weight-successors
@@ -342,55 +341,55 @@
                                                        :weight)
                  (catch clojure.lang.ExceptionInfo e (ex-message e)))))))
   ;; From https://brilliant.org/wiki/dijkstras-short-path-finder/#examples
-  (let [g      (-> {:weight {:db/type :db.type/integer}}
-                   (dsg/make-graph)
-                   (igraph/add (sut/complex-triples [[:a
-                                                      :to
-                                                      {:c {:weight 3}
-                                                       :d {:weight 7}
-                                                       :e {:weight 5}}]
-                                                     [:c
-                                                      :to
-                                                      {:a {:weight 3}
-                                                       :f {:weight 7}
-                                                       :d {:weight 1}}]
-                                                     [:d
-                                                      :to
-                                                      {:a {:weight 7}
-                                                       :c {:weight 1}
-                                                       :f {:weight 2}
-                                                       :g {:weight 1}
-                                                       :h {:weight 3}
-                                                       :e {:weight 3}}]
-                                                     [:e
-                                                      :to
-                                                      {:a {:weight 5}
-                                                       :d {:weight 3}
-                                                       :h {:weight 2}}]
-                                                     [:f
-                                                      :to
-                                                      {:c {:weight 7}
-                                                       :d {:weight 2}
-                                                       :g {:weight 2}
-                                                       :i {:weight 1}}]
-                                                     [:g
-                                                      :to
-                                                      {:d {:weight 1}
-                                                       :f {:weight 2}
-                                                       :h {:weight 3}
-                                                       :i {:weight 3}
-                                                       :b {:weight 2}}]
-                                                     [:h
-                                                      :to
-                                                      {:d {:weight 3}
-                                                       :e {:weight 2}
-                                                       :g {:weight 3}
-                                                       :b {:weight 4}}]
-                                                     [:i
-                                                      :to
-                                                      {:f {:weight 1}
-                                                       :g {:weight 3}
-                                                       :b {:weight 5}}]])))
+  (let [g      (reduce dm/add-mop
+                       (dm/make-mop-graph {:weight {:db/type :db.type/integer}})
+                       [[:a
+                         :to
+                         {:c {:weight 3}
+                          :d {:weight 7}
+                          :e {:weight 5}}]
+                        [:c
+                         :to
+                         {:a {:weight 3}
+                          :f {:weight 7}
+                          :d {:weight 1}}]
+                        [:d
+                         :to
+                         {:a {:weight 7}
+                          :c {:weight 1}
+                          :f {:weight 2}
+                          :g {:weight 1}
+                          :h {:weight 3}
+                          :e {:weight 3}}]
+                        [:e
+                         :to
+                         {:a {:weight 5}
+                          :d {:weight 3}
+                          :h {:weight 2}}]
+                        [:f
+                         :to
+                         {:c {:weight 7}
+                          :d {:weight 2}
+                          :g {:weight 2}
+                          :i {:weight 1}}]
+                        [:g
+                         :to
+                         {:d {:weight 1}
+                          :f {:weight 2}
+                          :h {:weight 3}
+                          :i {:weight 3}
+                          :b {:weight 2}}]
+                        [:h
+                         :to
+                         {:d {:weight 3}
+                          :e {:weight 2}
+                          :g {:weight 3}
+                          :b {:weight 4}}]
+                        [:i
+                         :to
+                         {:f {:weight 1}
+                          :g {:weight 3}
+                          :b {:weight 5}}]])
         source :a
         target :b]
     (is (= {:dist  7
