@@ -1,0 +1,13 @@
+#+title: datascript-shortest-path
+
+A library for computing shortest path over datascript databases. In order to account for weighted edges  graphs must be defined using [[https://github.com/tuh8888/datascript-mops][datascript-mops]].
+
+This library also includes a pure clojure implementation of [[https://github.com/w01fe/fibonacci-heap][w01fe/fibonacci-heap]] with comparable performance.
+
+* Usage
+
+* License
+
+Copyright © 2022 Harrison
+
+Distributed under the Eclipse Public License version 1.0.
