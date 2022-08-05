@@ -1,6 +1,6 @@
 (ns ont-app.datascript-graph.fibonacci-heap
   (:require
-   [ont-app.datascript-graph.util :refer [cond-pred->]])
+   [tuh8888.clojure-utils :refer [cond-pred->]])
   (:import (clojure.lang APersistentMap
                          ILookup
                          IPersistentMap
@@ -230,9 +230,7 @@
             this   (-> nodes
                        (assoc-in [k :priority] priority)
                        (->> (FibonacciHeap. min-k cmp roots))
-                       (cond-pred-> (->> (#(p< % k parent))
-                                         (or delete?)
-                                         (and parent))
+                       (cond-pred-> #(and parent (or delete? (p< % k parent)))
                                     (-> (cut parent k)
                                         (check-nodes)
                                         (cascading-cut parent)

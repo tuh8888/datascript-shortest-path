@@ -1,20 +1,14 @@
 ;;!zprint {:width 1000 :map {:sort? false}}
-{:deps    {io.github.tuh8888/datascript-mops {:local/root "../datascript-mops"}
+{:deps    {io.github.tuh8888/datascript-mops {:git/sha "51520de"
+                                              :git/tag "v0.0.1"
+                                              #_#_:local/root "../datascript-mops"}
            org.clojure/clojure               {:mvn/version "1.11.0"}}
- :aliases {:build {:deps       {io.github.seancorfield/build-clj {:deps/root "slim"
-                                                                  :git/sha   "9b8e09b"
-                                                                  :git/tag   "v0.6.3"}}
-                   :ns-default build}
-           :run-m {:main-opts ["-m" "tuh8888.datascript-shortest-path"]}
-           :run-x {:exec-args  {:name "Clojure"}
-                   :exec-fn    greet
-                   :ns-default tuh8888.datascript-shortest-path}
-           :dev   {:extra-deps  {io.github.cognitect-labs/test-runner {:git/sha "48c3c67"
-                                                                       :git/tag "v0.5.0"}
-                                 org.clojure/data.priority-map        {:mvn/version "1.1.0"}
-                                 w01fe/fibonacci-heap                 {:mvn/version "0.0.1-SNAPSHOT"}
-                                 criterium/criterium                  {:mvn/version "0.4.6"}
-                                 shams/priority-queue                 {:mvn/version "0.1.2"}
-                                 org.clojure/test.check               {:mvn/version "1.1.1"}}
-                   :extra-paths ["test"]}}
+ :aliases {:dev {:extra-deps  {io.github.cognitect-labs/test-runner {:git/sha "48c3c67"
+                                                                     :git/tag "v0.5.0"}
+                               org.clojure/data.priority-map        {:mvn/version "1.1.0"}
+                               w01fe/fibonacci-heap                 {:mvn/version "0.0.1-SNAPSHOT"}
+                               criterium/criterium                  {:mvn/version "0.4.6"}
+                               shams/priority-queue                 {:mvn/version "0.1.2"}
+                               org.clojure/test.check               {:mvn/version "1.1.1"}}
+                 :extra-paths ["test"]}}
  :paths   ["src" "resources"]}

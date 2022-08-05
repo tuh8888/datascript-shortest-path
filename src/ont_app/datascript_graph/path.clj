@@ -1,10 +1,10 @@
 (ns ont-app.datascript-graph.path
   (:require
-   [clojure.data.priority-map     :as pm]
-   [mops.datascript-mops          :as dm]
+   [clojure.data.priority-map :as pm]
+   [mops.datascript-mops      :as dm]
+   [tuh8888.clojure-utils     :refer [cond-pred->]]
    [ont-app.datascript-graph.fibonacci-heap :as fh]
-   [ont-app.datascript-graph.util :refer [cond-pred->]]
-   [ont-app.igraph.core           :as igraph]))
+   [ont-app.igraph.core       :as igraph]))
 
 (defn edges
   [g successor-fn]
@@ -16,13 +16,11 @@
   [update-state-fn path-fn dist-fn detect-neg? paths {:keys [from to e]}]
   (let [alt-path (-> paths
                      (path-fn from)
-                     (cond-pred-> ((complement nil?)) (conj e)))
+                     (cond-pred-> (complement nil?) (conj e)))
         alt-dist (dist-fn alt-path)]
     (cond-pred->
      paths
-     (-> (path-fn to)
-         dist-fn
-         (> alt-dist))
+     (comp (partial < alt-dist) dist-fn #(path-fn % to))
      (-> (cond-> detect-neg? (do (throw (ex-info "Negative weight cycle" {}))))
          (update-state-fn to alt-path alt-dist)))))
 

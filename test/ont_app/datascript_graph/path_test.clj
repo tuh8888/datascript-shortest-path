@@ -2,9 +2,9 @@
   (:require
    [clojure.test         :refer [deftest is testing]]
    [datascript.core      :as d]
+   [mops.datascript-mops :as dm]
    [ont-app.datascript-graph.core :as dsg]
-   [ont-app.datascript-graph.path :as sut]
-   [mops.datascript-mops :as dm]))
+   [ont-app.datascript-graph.path :as sut]))
 
 (defn calc-edge-dist
   [g edges]
@@ -19,7 +19,7 @@
   [g edges]
   (->> edges
        (d/pull-many (:db g) [{::dm/to [::dsg/id]} :weight])
-       (map #(update % ::dm/to (comp ::dsg/id first)))))
+       (map #(update % ::dm/to ::dsg/id))))
 
 (defn path-info
   [g source path]
@@ -36,7 +36,8 @@
   (let [min-weight (fn [db a b]
                      (d/q '{:find  [(min ?dist) .]
                             :in    [?ma ?mb $ %]
-                            :where [(edge ?ma _ ?mb ?medge)
+                            :where [[?medge ::dm/from ?ma]
+                                    [?medge ::dm/to ?mb]
                                     [?medge :weight ?dist]]}
                           a
                           b
@@ -46,7 +47,8 @@
               '{:find  [?from-id ?to-id ?edge ?id]
                 :keys  [from to e id]
                 :in    [?from min-weight]
-                :where [(edge ?from _ ?to ?edge)
+                :where [[?edge ::dm/from ?from]
+                        [?edge ::dm/to ?to]
                         [(min-weight $ ?from ?to) ?mdist]
                         [?edge :weight ?mdist]
                         [?edge ::dsg/id ?id]
